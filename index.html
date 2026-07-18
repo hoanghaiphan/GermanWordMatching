@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Deutsch Vokabeln · German Vocab Practice</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-top">
+        <h1>Deutsch Vokabeln</h1>
+        <p class="subtitle">Practice German vocabulary with matching games</p>
+      </div>
+
+      <nav class="mode-tabs" style="display:none;">
+        <!-- Flashcards removed. Only reading-based games now. -->
+      </nav>
+    </header>
+
+    <!-- Main area focused on reading-based games -->
+    <main class="main reading-games" id="mode-reading-games">
+
+      <!-- MENU / Home -->
+      <div id="menu-view">
+        <div class="menu-intro">
+          <h2>Practice German Vocabulary</h2>
+          <p>Build your German word recognition with fun matching games.<br>
+          Two ways to practice:</p>
+        </div>
+
+        <div class="menu-cards">
+          <div class="menu-card">
+            <div class="menu-icon">📝</div>
+            <h3>Use your own reading</h3>
+            <p>Paste a short German passage or dialogue. Filter by CEFR level, extract the vocabulary, then play the matching game with exactly those words.</p>
+            <button id="start-custom-btn" class="btn btn-learned btn-large">Paste reading &amp; extract words</button>
+          </div>
+
+          <div class="menu-card">
+            <div class="menu-icon">📚</div>
+            <h3>Practice ready-made sets</h3>
+            <p>Choose CEFR levels (A1–C2) and play with pre-grouped vocabulary sets. Perfect for regular daily practice.</p>
+            <button id="start-sets-btn" class="btn btn-learned btn-large">Browse practice sets</button>
+          </div>
+        </div>
+
+        <p class="menu-hint">Tip: Match German words with their English meanings. Correct answers reveal articles (der/die/das) too.</p>
+      </div>
+
+      <!-- CUSTOM READING FLOW -->
+      <div id="custom-flow" style="display:none;">
+        <button class="back-btn" id="back-from-custom">← Back to menu</button>
+
+        <!-- 1. Input Reading — stays visible even while a game is running -->
+        <div class="custom-reading" id="reading-input">
+        <div class="section-header">
+          <strong>Paste your reading</strong>
+          <span class="hint">Paste German text, then pick CEFR levels and extract vocabulary. You can change the text anytime and extract again.</span>
+        </div>
+
+        <textarea id="custom-reading-text" rows="6" placeholder="Paste German text here, e.g. a short story or dialogue...">Deutsch lernen ist nicht immer leicht, aber mit Übung und Geduld schafft man viel. Jeden Tag ein bisschen lesen, neue Wörter lernen und sprechen hilft sehr. Hab keine Angst vor Fehlern — Fehler sind die besten Lehrer. Bleib optimistisch und ermutige dich selbst, wenn es schwierig wird. Mit genug Motivation und Zeit erreichst du dein Ziel. Glaub an dich und mach weiter — du schaffst das! Viel Erfolg!</textarea>
+
+        <!-- CEFR filters after the text box -->
+        <div class="hsk-levels level-filters">
+          <span class="hsk-label">Filter words by CEFR level(s):</span>
+          <div class="checkbox-group">
+            <label class="hsk-cb"><input type="checkbox" value="1" checked> A1</label>
+            <label class="hsk-cb"><input type="checkbox" value="2" checked> A2</label>
+            <label class="hsk-cb"><input type="checkbox" value="3" checked> B1</label>
+            <label class="hsk-cb"><input type="checkbox" value="4"> B2</label>
+            <label class="hsk-cb"><input type="checkbox" value="5"> C1</label>
+            <label class="hsk-cb"><input type="checkbox" value="6"> C2</label>
+          </div>
+          <div class="level-actions">
+            <button type="button" id="select-all-levels" class="small-btn">All</button>
+            <button type="button" id="clear-levels" class="small-btn">None</button>
+          </div>
+        </div>
+
+        <div class="extract-actions">
+          <button id="extract-custom-btn" class="btn btn-primary">Extract Words from Reading</button>
+          <button id="clear-custom-btn" class="btn btn-secondary" style="display:none;">Clear</button>
+        </div>
+
+        <div id="custom-extract-info" class="extract-info"></div>
+      </div> <!-- end #reading-input (custom only) -->
+      </div> <!-- end #custom-flow -->
+
+      <!-- SETS header (shown only in sets mode, before the shared panel for correct order) -->
+      <div id="sets-flow" style="display:none;">
+        <button class="back-btn" id="back-from-sets">← Back to menu</button>
+
+        <div class="section-header">
+          <strong>Practice Ready-Made Sets</strong>
+          <span class="hint">Pick CEFR levels, choose a word group, then press Preview to select words before playing.</span>
+        </div>
+
+        <!-- CEFR for sets mode (controls the shared panel) -->
+        <div class="hsk-levels level-filters sets-hsk sets-level-filters sets-cefr-filters">
+          <span class="hsk-label">Filter by CEFR level(s):</span>
+          <div class="checkbox-group">
+            <label class="hsk-cb"><input type="checkbox" value="1" checked class="sets-level"> A1</label>
+            <label class="hsk-cb"><input type="checkbox" value="2" checked class="sets-level"> A2</label>
+            <label class="hsk-cb"><input type="checkbox" value="3" class="sets-level"> B1</label>
+            <label class="hsk-cb"><input type="checkbox" value="4" class="sets-level"> B2</label>
+            <label class="hsk-cb"><input type="checkbox" value="5" class="sets-level"> C1</label>
+            <label class="hsk-cb"><input type="checkbox" value="6" class="sets-level"> C2</label>
+          </div>
+          <div class="level-actions">
+            <button type="button" id="sets-select-all" class="small-btn">All</button>
+            <button type="button" id="sets-clear" class="small-btn">None</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Shared practice panel (word list + game launcher) - used by BOTH custom and sets -->
+      <div id="practice-panel" style="display:none;">
+        <!-- 2. Word List -->
+        <div class="word-list-section" id="words-list-section">
+          <!-- Set picker: only for ready-made sets mode (hidden in custom reading) -->
+          <div class="level-picker" id="set-picker">
+            <label for="set-select">Game set (groups of ~20 words):</label>
+            <div class="set-picker-row">
+              <select id="set-select"></select>
+              <button type="button" id="preview-set-btn" class="btn btn-secondary">Preview words</button>
+            </div>
+          </div>
+
+          <div class="section-header" id="words-list-header">
+            <strong>Words</strong>
+            <span class="hint">Select or uncheck words. Use the game below.</span>
+          </div>
+          <div id="extracted-words-list" class="extracted-list" hidden></div>
+        </div>
+
+        <!-- 3. Games -->
+        <div class="games-from-reading">
+          <div class="section-header">
+            <strong>Games</strong>
+          </div>
+
+          <div class="game-cards">
+            <div class="game-card">
+              <h3>Matching Game</h3>
+              <p>Tap the card where the German word matches the English meaning. Larger targets for phones. Correct matches reveal articles (der/die/das) for learning.</p>
+              <div class="game-actions">
+                <button class="btn btn-learned" id="start-picture-game">Start matching game</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div> <!-- end #practice-panel -->
+
+      <p class="picture-highscore-hint">High score: <span id="start-high-score">0</span></p>
+      <div id="picture-game-screen" class="picture-game" hidden>
+        <div class="picture-hud">
+          <div class="hud-item">
+            <span class="hud-label">Score</span>
+            <span class="hud-value" id="picture-score">0</span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-label">Matches on screen</span>
+            <span class="hud-value" id="picture-hint-count">1</span>
+          </div>
+        </div>
+        <p class="picture-rule">Tap the card where the German word matches the English meaning. Correct matches reveal articles for learning.</p>
+        <div class="picture-grid" id="picture-grid"></div>
+      </div>
+
+      <div id="picture-gameover" class="picture-gameover" hidden>
+        <h2>Game Over</h2>
+        <p class="gameover-score">Your score: <span id="final-score">0</span></p>
+        <p class="gameover-highscore">High score: <span id="high-score">0</span></p>
+
+        <div id="practiced-review" class="practiced-review" hidden>
+          <p class="review-title">Words you practiced:</p>
+          <ul id="practiced-list" class="practiced-list"></ul>
+        </div>
+
+        <div class="gameover-actions">
+          <button class="btn btn-learned" id="play-again-btn">Play Again</button>
+          <button class="btn btn-secondary" id="back-menu-btn">← Back to menu</button>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p>Practice a little every day — Jeden Tag ein bisschen üben</p>
+    </footer>
+  </div>
+
+  <script src="vocabulary.js" charset="utf-8"></script>
+  <script src="picture-game.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

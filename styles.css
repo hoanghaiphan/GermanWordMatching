@@ -1,0 +1,1466 @@
+﻿*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+:root {
+  --bg: #f5f0e8;
+  --surface: #fffdf9;
+  --ink: #1a1a1a;
+  --muted: #6b6560;
+  --accent: #c23b3b;
+  --accent-soft: #fde8e8;
+  --green: #2d6a4f;
+  --green-soft: #e8f5ee;
+  --gold: #b8860b;
+  --shadow: 0 8px 32px rgba(26, 26, 26, 0.1);
+  --radius: 20px;
+}
+
+body {
+  font-family: 'Outfit', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--bg);
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(194, 59, 59, 0.06) 0%, transparent 50%),
+    radial-gradient(circle at 80% 80%, rgba(45, 106, 79, 0.06) 0%, transparent 50%);
+  color: var(--ink);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 3rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Menu */
+#menu-view {
+  text-align: center;
+  margin-bottom: 1rem;
+}
+.menu-intro h2 {
+  font-size: 1.6rem;
+  margin-bottom: 0.5rem;
+}
+.menu-intro p {
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+.menu-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+.menu-card {
+  background: var(--surface);
+  border: 2px solid rgba(194, 59, 59, 0.15);
+  border-radius: 16px;
+  padding: 1.25rem;
+  text-align: left;
+  box-shadow: var(--shadow);
+}
+.menu-card .menu-icon {
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+.menu-card h3 {
+  margin: 0.25rem 0;
+  font-size: 1.1rem;
+}
+.menu-card p {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+  line-height: 1.35;
+}
+.btn-large {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+}
+.menu-hint {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.back-btn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.9rem;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+.back-btn:hover {
+  text-decoration: underline;
+}
+
+.mode-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.mode-tab {
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.55rem 1.25rem;
+  border: 2px solid rgba(194, 59, 59, 0.15);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.mode-tab--active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.mode-tab:hover:not(.mode-tab--active) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.header h1 {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 2.5rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+}
+
+.subtitle {
+  color: var(--muted);
+  font-size: 1rem;
+  margin-top: 0.25rem;
+}
+
+.level-picker {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+  width: 100%;
+}
+
+.level-picker label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.set-picker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+}
+
+.level-picker select {
+  font-family: "SimSun", system-ui, sans-serif;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid rgba(194, 59, 59, 0.2);
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  min-width: 160px;
+  flex: 1 1 160px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+#preview-set-btn {
+  flex: 0 0 auto;
+  min-width: 8.5rem;
+  white-space: nowrap;
+}
+
+.level-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+}
+
+.stats {
+  display: flex;
+  justify-content: center;
+  gap: 1.5rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.stat {
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 0.75rem 1.25rem;
+  box-shadow: var(--shadow);
+  min-width: 90px;
+}
+
+.stat-value {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.card-area {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  width: 100%;
+}
+
+.flashcard {
+  flex: 1;
+  height: 320px;
+  perspective: 1200px;
+  cursor: pointer;
+  outline: none;
+}
+
+.card-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.flashcard.flipped .card-inner {
+  transform: rotateY(180deg);
+}
+
+.card-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  border: 2px solid rgba(194, 59, 59, 0.12);
+}
+
+.card-face .level-badge {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+.card-back {
+  transform: rotateY(180deg);
+  background: linear-gradient(160deg, #fffdf9 0%, #fef6f0 100%);
+}
+
+.card-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+
+.de-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 5rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.hint {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.de-article {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 0.5rem;
+}
+
+.meaning {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin-bottom: 1rem;
+}
+
+.nav-btn {
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 1.75rem;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s, background 0.15s;
+  flex-shrink: 0;
+  line-height: 1;
+  padding-bottom: 2px;
+}
+
+.nav-btn:hover {
+  transform: scale(1.08);
+  background: var(--accent-soft);
+}
+
+.nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.flip-hint {
+  margin-top: 1.25rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.flip-hint kbd {
+  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-family: inherit;
+  font-size: 0.8rem;
+}
+
+.actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.75rem;
+  width: 100%;
+  max-width: 400px;
+}
+
+.actions[hidden] {
+  display: none;
+}
+
+.btn {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  min-height: 44px;
+  border: none;
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.btn:hover {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 520px) {
+  .btn {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    min-height: 40px;
+  }
+}
+
+.btn-learned {
+  background: var(--green);
+  color: white;
+  box-shadow: 0 4px 16px rgba(45, 106, 79, 0.3);
+}
+
+.btn-review {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 2px solid rgba(194, 59, 59, 0.2);
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 2rem;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  flex: none;
+}
+
+.btn-secondary:hover {
+  color: var(--ink);
+  border-color: rgba(194, 59, 59, 0.3);
+}
+
+.footer {
+  text-align: center;
+  margin-top: 2.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.footer p {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+}
+
+/* Picture match game */
+.picture-main {
+  width: 100%;
+}
+
+.picture-start {
+  text-align: center;
+  width: 100%;
+  max-width: 520px;
+}
+
+.picture-start h2 {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  color: var(--accent);
+  margin-bottom: 0.75rem;
+}
+
+.picture-intro {
+  color: var(--muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.6;
+}
+
+.picture-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.btn-start {
+  max-width: 220px;
+  margin: 0 auto;
+}
+
+.picture-highscore-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-top: 0.5rem;
+}
+
+.lesson-reading {
+  background: #faf7f2;
+  border: 1px solid rgba(194, 59, 59, 0.2);
+  border-radius: 10px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  text-align: left;
+  font-size: 0.9rem;
+}
+
+.lesson-reading .lesson-title {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.lesson-reading .lesson-text {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 1.05rem;
+  line-height: 1.4;
+  margin: 0.25rem 0;
+  color: var(--ink);
+}
+
+.lesson-reading .lesson-desc {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.custom-reading {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  background: #faf7f2;
+  border: 1px solid rgba(194, 59, 59, 0.15);
+  border-radius: 10px;
+  text-align: left;
+}
+
+.custom-reading .section-header {
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+  color: var(--ink);
+}
+
+.custom-reading .hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  display: block;
+  margin-top: 0.1rem;
+}
+
+.custom-reading label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.custom-reading textarea {
+  width: 100%;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid rgba(194, 59, 59, 0.25);
+  border-radius: 8px;
+  resize: vertical;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.custom-reading textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(194, 59, 59, 0.1);
+}
+
+.hsk-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.6rem;
+}
+
+.hsk-levels .hsk-label {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-right: 0.35rem;
+  white-space: nowrap;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.hsk-levels .hsk-cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  background: white;
+  border: 1px solid rgba(194, 59, 59, 0.2);
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.hsk-levels .hsk-cb:hover {
+  border-color: var(--accent);
+}
+
+.hsk-levels .hsk-cb input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.level-actions {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: 0.3rem;
+}
+
+.small-btn {
+  font-size: 0.68rem;
+  padding: 0.25rem 0.5rem;
+  min-height: 32px;
+  border: 1px solid rgba(194, 59, 59, 0.25);
+  background: #f8f4ee;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.small-btn:hover {
+  background: #f0e9df;
+  border-color: var(--accent);
+}
+
+.extract-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.extract-info {
+  font-size: 0.85rem;
+  color: #444;
+  margin: 0.3rem 0;
+  font-weight: 500;
+}
+
+.extracted-list {
+  max-height: 220px; /* more space for related info */
+  overflow-y: auto;
+  background: white;
+  border: 1px solid rgba(194, 59, 59, 0.18);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.9rem;
+  margin-top: 0.4rem;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+  line-height: 1.4;
+}
+
+.extracted-list strong {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--accent);
+}
+
+.extracted-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: none;
+  overflow: visible;
+}
+
+.extracted-list li {
+  padding: 0.35rem 0.2rem;
+  line-height: 1.5;
+  display: block;
+  border-bottom: 1px dotted rgba(0,0,0,0.08);
+  margin-bottom: 0.2rem;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif;
+}
+
+.extracted-list li:last-child {
+  border-bottom: none;
+}
+
+.extracted-list .de-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 1.05em;
+  flex-shrink: 0;
+}
+
+.extracted-list .de-article {
+  color: var(--gold);
+  font-size: 0.82em;
+  white-space: nowrap;
+}
+
+.extracted-list .meaning {
+  color: #555;
+  font-size: 0.85em;
+  flex: 1 1 100%;
+  margin-top: 0.1rem;
+}
+
+.game-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0.4rem 0;
+  flex-wrap: wrap;
+}
+
+.game-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.game-card {
+  border: 1px solid rgba(194, 59, 59, 0.15);
+  border-radius: 10px;
+  padding: 0.75rem;
+  background: #fff;
+}
+
+.game-card h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.word-list-section {
+  margin: 0.75rem 0;
+}
+
+.picture-preview {
+  margin-top: 0.75rem;
+  padding: 0.6rem;
+  background: white;
+  border: 1px solid rgba(194, 59, 59, 0.2);
+  border-radius: 10px;
+}
+
+.preview-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.preview-header strong {
+  color: var(--accent);
+}
+
+.preview-hint {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.6rem;
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.preview-card {
+  border: 1px solid rgba(194, 59, 59, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #faf7f2;
+  text-align: center;
+  font-size: 0.85rem;
+  min-height: 110px;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-card img {
+  width: 100%;
+  height: 72px;
+  object-fit: cover;
+  display: block;
+}
+
+.preview-card .preview-word {
+  padding: 0.2rem 0.3rem 0.05rem;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 0.95em;
+}
+.preview-card .preview-meaning {
+  padding: 0 0.3rem 0.3rem;
+  font-size: 0.68rem;
+  color: #555;
+  line-height: 1.15;
+  flex: 1;
+}
+.preview-card .preview-pinyin {
+  font-size: 0.7rem;
+  color: var(--gold);
+  padding-bottom: 0.1rem;
+}
+
+.preview-note {
+  font-size: 0.7rem;
+  color: #666;
+  margin: 0.35rem 0 0;
+  text-align: center;
+}
+
+.preview-no-pic {
+  height: 68px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f8f4ee;
+  padding: 4px;
+}
+
+.preview-no-pic .preview-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.preview-no-pic .preview-meaning {
+  font-size: 0.7rem;
+  color: #555;
+  margin-top: 2px;
+  text-align: center;
+  line-height: 1.1;
+  max-height: 2.2em;
+  overflow: hidden;
+}
+.preview-no-pic .preview-pinyin {
+  font-size: 0.65rem;
+  color: var(--gold);
+  text-align: center;
+}
+
+.preview-card {
+  min-height: 90px;
+}
+
+/* Text-only preview list (used when "Play text-only" is checked) */
+.text-only-preview-list {
+  display: block;
+}
+.text-preview-item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px dotted rgba(0,0,0,0.08);
+  font-size: 0.9rem;
+}
+.text-preview-item:last-child {
+  border-bottom: none;
+}
+.text-preview-item .preview-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.text-preview-item .preview-pinyin {
+  color: var(--gold);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.text-preview-item .preview-meaning {
+  color: #555;
+  font-size: 0.82rem;
+  flex: 1;
+}
+
+/* Used both in preview and in the actual game cards when no picture is available */
+.picture-no-pic,
+.preview-no-pic {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f8f4ee;
+  padding: 4px;
+  text-align: center;
+}
+
+.picture-no-pic .preview-word,
+.preview-no-pic .preview-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.picture-no-pic .preview-meaning,
+.preview-no-pic .preview-meaning {
+  font-size: 0.68rem;
+  color: #555;
+  margin-top: 2px;
+  line-height: 1.1;
+  max-height: 2.4em;
+  overflow: hidden;
+}
+
+.picture-hud {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  margin-bottom: 1rem;
+  width: 100%;
+}
+
+
+
+.hud-item {
+  text-align: center;
+  background: var(--surface);
+  padding: 0.6rem 1.2rem;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.hud-label {
+  display: block;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.hud-value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.picture-rule {
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+
+.picture-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  width: 100%;
+  grid-auto-rows: minmax(175px, auto);
+}
+
+.picture-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 0.5rem 0.4rem 0.6rem;
+  border: 2px solid rgba(194, 59, 59, 0.12);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  /* Allow text below to always be visible */
+  overflow: visible;
+  transition: transform 0.1s ease, border-color 0.15s;
+  min-height: 170px;
+  box-sizing: border-box;
+
+  /* Touch improvements */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.picture-card:active {
+  transform: scale(0.97);
+  border-color: var(--accent);
+}
+
+.picture-card:hover {
+  border-color: rgba(194, 59, 59, 0.35);
+}
+
+.picture-card--correct {
+  border-color: var(--green);
+  background: var(--green-soft);
+}
+
+.picture-card--wrong {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  animation: shake 0.4s ease;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+
+.picture-timer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--green), var(--gold), var(--accent));
+  transition: width 0.1s linear;
+  pointer-events: none;
+}
+
+.picture-img-wrap {
+  width: 100%;
+  aspect-ratio: 16 / 10;         /* Slightly wider for better label space below */
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0.15rem 0 0.25rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #f0ebe3;
+  pointer-events: none;
+  flex-shrink: 0;
+}
+
+.picture-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  /* Prevent size jumps while loading */
+  image-rendering: auto;
+}
+
+.picture-fallback {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #f0ebe3;
+}
+
+/* Learning feedback overlays */
+.picture-meaning-reveal {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, #f8f4ee, #f0ebe3);
+  padding: 6px;
+  text-align: center;
+  font-size: 0.8rem;
+  line-height: 1.15;
+}
+
+.picture-meaning-reveal .reveal-hanzi {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.picture-meaning-reveal .reveal-pinyin {
+  font-size: 0.75rem;
+  color: var(--gold);
+  margin-bottom: 2px;
+}
+
+.picture-meaning-reveal .reveal-meaning {
+  font-size: 0.72rem;
+  color: var(--green);
+  font-weight: 500;
+  margin-top: 2px;
+  max-width: 95%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.picture-meaning-reveal.wrong .reveal-meaning {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.picture-word {
+  pointer-events: none;
+  user-select: none;
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-size: 1.35rem;
+  font-weight: 700;
+  color: var(--ink);
+  line-height: 1.1;
+  min-height: 1.5em; /* reserve space for stability */
+  margin: 0;
+}
+
+.picture-pinyin {
+  font-size: 0.78rem;
+  color: var(--gold);
+  margin-top: 0.1rem;
+  line-height: 1;
+  min-height: 1em; /* reserve space even if empty */
+}
+
+.picture-gameover {
+  text-align: center;
+  padding: 1.5rem 1rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  width: 100%;
+  max-width: min(400px, 100%);
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.picture-gameover h2 {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  color: var(--accent);
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+}
+
+.gameover-score {
+  font-size: 1.35rem;
+  margin-bottom: 0.25rem;
+}
+
+.gameover-score span {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 2rem;
+}
+
+.gameover-highscore {
+  font-size: 0.95rem;
+  color: var(--muted);
+  margin-bottom: 1.25rem;
+}
+
+.gameover-highscore span {
+  font-weight: 700;
+  color: var(--gold);
+}
+
+.gameover-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  justify-content: center;
+  align-items: stretch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.gameover-actions .btn {
+  flex: none;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+  line-height: 1.3;
+  padding: 0.75rem 1rem;
+}
+
+.practiced-review {
+  text-align: left;
+  margin: 0.75rem 0 1rem;
+  padding: 0.5rem;
+  background: #faf7f2;
+  border-radius: 10px;
+  max-height: 120px;
+  overflow-y: auto;
+  font-size: 0.8rem;
+}
+
+.review-title {
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.practiced-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.practiced-list li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: baseline;
+  padding: 0.2rem 0;
+  border-bottom: 1px dotted rgba(0,0,0,0.1);
+}
+
+.practiced-list .de-word {
+  font-family: "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "SimHei", "WenQuanYi Micro Hei", "SimSun", sans-serif !important;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 1em;
+}
+
+.practiced-list .de-article {
+  color: var(--gold);
+  font-size: 0.85rem;
+}
+
+.practiced-list .meaning {
+  color: var(--green);
+  font-size: 0.85rem;
+  flex: 1 1 100%;
+  margin-top: 0.1rem;
+}
+
+@media (max-width: 520px) {
+  .app {
+    padding: 0.75rem 0.5rem 1.5rem;
+  }
+
+  .section-header {
+    font-size: 0.85rem;
+  }
+
+  .hint {
+    font-size: 0.7rem;
+  }
+
+  .header h1 {
+    font-size: 1.8rem;
+  }
+
+  .subtitle {
+    font-size: 0.85rem;
+  }
+
+  .section-header {
+    font-size: 0.9rem;
+  }
+
+  .custom-reading {
+    padding: 0.5rem;
+    margin: 0.5rem 0;
+  }
+
+  .hsk-levels {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .hsk-levels .hsk-label {
+    margin-bottom: 0.25rem;
+    font-size: 0.75rem;
+  }
+
+  .checkbox-group {
+    gap: 0.35rem;
+  }
+
+  .hsk-cb {
+    font-size: 0.75rem;
+  }
+
+  .hsk-cb {
+    min-height: 32px;
+    padding: 0.2rem 0.4rem;
+  }
+
+  .game-cards {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .game-card {
+    padding: 0.5rem;
+  }
+
+  .level-picker {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  .level-picker select {
+    min-width: 0;
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
+  .set-picker-row {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+  }
+
+  #preview-set-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .picture-gameover {
+    padding: 1.25rem 0.85rem;
+    max-width: 100%;
+  }
+
+  .gameover-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  body,
+  .app {
+    overflow-x: hidden;
+  }
+
+  .game-card h3 {
+    font-size: 0.9rem;
+  }
+
+  .word-list-section {
+    margin: 0.5rem 0;
+  }
+
+  .word-list-section .section-header {
+    font-size: 0.85rem;
+  }
+
+  .extracted-list {
+    max-height: 160px;
+    font-size: 0.8rem;
+    padding: 0.4rem;
+  }
+
+  .extracted-list li {
+    padding: 0.2rem 0;
+  }
+
+  .preview-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.4rem;
+  }
+
+  .preview-card {
+    min-height: 70px;
+  }
+
+  .preview-card {
+    min-height: 80px;
+    font-size: 0.75rem;
+  }
+
+  .preview-card img {
+    height: 55px;
+  }
+
+
+
+  .picture-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+
+  .picture-card {
+    min-height: 210px;
+    padding: 0.6rem 0.5rem 0.7rem;
+  }
+
+  .picture-img-wrap {
+    height: 80px;
+  }
+
+  .menu-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .picture-word {
+    font-size: 0.9rem;
+    padding: 0.15rem;
+  }
+
+  .preview-card {
+    font-size: 0.7rem;
+  }
+
+  .game-actions {
+    flex-direction: column;
+  }
+
+  .game-actions .btn {
+    width: 100%;
+    padding: 0.5rem;
+  }
+
+  .picture-hud {
+    gap: 1rem;
+  }
+
+  .hud-value {
+    font-size: 1.4rem;
+  }
+
+  .gameover-actions .btn {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
+    font-size: 0.95rem;
+    padding: 0.75rem 0.85rem;
+  }
+
+  .practiced-list li {
+    font-size: 0.8rem;
+  }
+}
