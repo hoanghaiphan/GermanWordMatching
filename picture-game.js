@@ -5,6 +5,7 @@ const POINTS_PER_CORRECT = 10;
 const TICK_MS = 250;
 
 let pictureVocabulary = [];
+let baseVocabulary = []; // built-in CEFR list (without user words)
 let currentSetWords = [];
 let slots = [];
 let score = 0;
@@ -15,13 +16,127 @@ let gridClickBound = false;
 let highScore = 0;
 let practicedWords = [];  // for post-game review / learning
 let customWords = [];     // words extracted from user-pasted reading
-let currentImageMap = {}; // hanzi -> url (from online search) or null (meaning only, no picture)
+let currentImageMap = {}; // word -> url (from online search) or null (meaning only, no picture)
 let unselectedWords = new Set(); // for user to unselect words from the extracted set
 
 // CEFR level labels: 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2
 const LEVEL_LABELS = { 1: 'A1', 2: 'A2', 3: 'B1', 4: 'B2', 5: 'C1', 6: 'C2' };
 function levelLabel(level) {
   return LEVEL_LABELS[level] || String(level);
+}
+
+const USER_VOCAB_KEY = 'german-user-vocabulary-v1';
+
+/** Load user-added words from localStorage. */
+function loadUserVocabulary() {
+  try {
+    const raw = localStorage.getItem(USER_VOCAB_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    return list
+      .filter((w) => w && typeof w.word === 'string' && w.word.trim())
+      .map((w) => ({
+        word: String(w.word).trim(),
+        article: String(w.article || '').trim(),
+        meaning: String(w.meaning || '').trim(),
+        level: Math.min(6, Math.max(1, Number(w.level) || 3)),
+        userAdded: true,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function saveUserVocabulary(list) {
+  try {
+    const clean = (list || []).map((w) => ({
+      word: w.word,
+      article: w.article || '',
+      meaning: w.meaning || '',
+      level: w.level || 3,
+    }));
+    localStorage.setItem(USER_VOCAB_KEY, JSON.stringify(clean));
+  } catch (e) {
+    console.warn('Could not save user vocabulary', e);
+  }
+}
+
+/** Rebuild pictureVocabulary = built-in + user words (user wins on same word, case-insensitive). */
+function rebuildVocabularyWithUserWords() {
+  const userWords = loadUserVocabulary();
+  const byKey = new Map();
+  for (const w of baseVocabulary) {
+    if (w && w.word) byKey.set(String(w.word).toLowerCase(), { ...w, userAdded: false });
+  }
+  for (const w of userWords) {
+    byKey.set(String(w.word).toLowerCase(), { ...w, userAdded: true });
+  }
+  pictureVocabulary = Array.from(byKey.values());
+  return userWords;
+}
+
+function findWordInLibrary(word) {
+  const key = (word || '').trim().toLowerCase();
+  if (!key) return null;
+  return pictureVocabulary.find((w) => String(w.word || '').toLowerCase() === key) || null;
+}
+
+function normalizeNewWord({ word, article, meaning, level }) {
+  let art = String(article || '').trim().toLowerCase();
+  if (art && !['der', 'die', 'das'].includes(art)) art = '';
+  return {
+    word: String(word || '').trim(),
+    article: art,
+    meaning: String(meaning || '').trim(),
+    level: Math.min(6, Math.max(1, Number(level) || 3)),
+    userAdded: true,
+  };
+}
+
+/**
+ * Add a user word if not already in the library.
+ * @returns {{ ok: boolean, reason?: string, word?: object, existing?: object }}
+ */
+function addUserWord(input) {
+  const entry = normalizeNewWord(input);
+  if (!entry.word) return { ok: false, reason: 'Please enter a German word.' };
+  if (!/[a-zäöüß]/i.test(entry.word)) {
+    return { ok: false, reason: 'German field should include letters (a–z, äöüß).' };
+  }
+  if (!entry.meaning) return { ok: false, reason: 'Please enter an English meaning.' };
+
+  const existing = findWordInLibrary(entry.word);
+  if (existing) {
+    const label = levelLabel(existing.level);
+    return {
+      ok: false,
+      reason: existing.userAdded
+        ? `“${entry.word}” is already in your added words.`
+        : `“${existing.word}” is already in the library (${label}).`,
+      existing,
+    };
+  }
+
+  const userWords = loadUserVocabulary();
+  userWords.push({
+    word: entry.word,
+    article: entry.article,
+    meaning: entry.meaning,
+    level: entry.level,
+  });
+  saveUserVocabulary(userWords);
+  rebuildVocabularyWithUserWords();
+  return { ok: true, word: entry };
+}
+
+function removeUserWord(word) {
+  const key = (word || '').trim().toLowerCase();
+  if (!key) return false;
+  const next = loadUserVocabulary().filter((w) => String(w.word).toLowerCase() !== key);
+  saveUserVocabulary(next);
+  rebuildVocabularyWithUserWords();
+  return true;
 }
 
 // Sample lessons for integration: Reading first, then practice words from it
@@ -1114,7 +1229,8 @@ function bindKeyboardControls() {
 }
 
 function initPictureGame(vocabulary) {
-  pictureVocabulary = vocabulary;
+  baseVocabulary = Array.isArray(vocabulary) ? vocabulary.slice() : [];
+  rebuildVocabularyWithUserWords();
   loadHighScore();
   bindGridClicks();
   bindKeyboardControls();
@@ -1259,11 +1375,13 @@ function initPictureGame(vocabulary) {
   const customFlow = document.getElementById('custom-flow');
   const practicePanel = document.getElementById('practice-panel');
   const setsFlow = document.getElementById('sets-flow');
+  const addWordsFlow = document.getElementById('add-words-flow');
 
   function showMenu() {
     if (menuView) menuView.style.display = '';
     if (customFlow) customFlow.style.display = 'none';
     if (setsFlow) setsFlow.style.display = 'none';
+    if (addWordsFlow) addWordsFlow.style.display = 'none';
     if (practicePanel) practicePanel.style.display = 'none';
     // hide game if open
     const gameScreen = document.getElementById('picture-game-screen');
@@ -1274,9 +1392,78 @@ function initPictureGame(vocabulary) {
     if (hint) hint.style.display = 'none';
   }
 
+  function setAddWordStatus(msg, isError = false) {
+    const el = document.getElementById('add-word-status');
+    if (!el) return;
+    el.innerHTML = msg || '';
+    el.style.color = isError ? 'var(--accent)' : '';
+  }
+
+  function renderUserWordsList() {
+    const listEl = document.getElementById('user-words-list');
+    const countEl = document.getElementById('user-words-count');
+    const userWords = loadUserVocabulary();
+    if (countEl) {
+      countEl.textContent = `${userWords.length} saved in this browser`;
+    }
+    if (!listEl) return;
+    if (!userWords.length) {
+      listEl.innerHTML = '<p class="user-words-empty">No custom words yet. Add one above — it will be used in reading extract and practice sets.</p>';
+      return;
+    }
+    const sorted = [...userWords].sort((a, b) => {
+      if (a.level !== b.level) return a.level - b.level;
+      return a.word.localeCompare(b.word, 'de');
+    });
+    listEl.innerHTML = `<ul>${sorted.map((w) => {
+      const meaning = (w.meaning || '').replace(/</g, '&lt;');
+      const article = w.article ? ` (${w.article})` : '';
+      const wordEsc = (w.word || '').replace(/"/g, '&quot;');
+      return `<li>
+        <div class="user-word-meta">
+          <span class="de-word">${w.word}</span>
+          <span class="de-article">${article}</span>
+          <span class="meaning">— ${meaning} <em>(${levelLabel(w.level)} · yours)</em></span>
+        </div>
+        <button type="button" class="remove-user-word" data-word="${wordEsc}">Remove</button>
+      </li>`;
+    }).join('')}</ul>`;
+
+    listEl.querySelectorAll('.remove-user-word').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const word = btn.dataset.word;
+        if (!word) return;
+        if (!confirm(`Remove “${word}” from your library?`)) return;
+        removeUserWord(word);
+        renderUserWordsList();
+        updatePictureSetOptions();
+        setAddWordStatus(`Removed “${word}”.`);
+      });
+    });
+  }
+
+  function showAddWords() {
+    if (menuView) menuView.style.display = 'none';
+    if (customFlow) customFlow.style.display = 'none';
+    if (setsFlow) setsFlow.style.display = 'none';
+    if (practicePanel) practicePanel.style.display = 'none';
+    if (addWordsFlow) addWordsFlow.style.display = '';
+    const hint = document.querySelector('.picture-highscore-hint');
+    if (hint) hint.style.display = 'none';
+    const gameScreen = document.getElementById('picture-game-screen');
+    const gameOver = document.getElementById('picture-gameover');
+    if (gameScreen) gameScreen.hidden = true;
+    if (gameOver) gameOver.hidden = true;
+    setAddWordStatus('');
+    renderUserWordsList();
+    const wordInput = document.getElementById('add-word');
+    if (wordInput) wordInput.focus();
+  }
+
   function showCustom() {
     if (menuView) menuView.style.display = 'none';
     if (setsFlow) setsFlow.style.display = 'none';
+    if (addWordsFlow) addWordsFlow.style.display = 'none';
     if (customFlow) customFlow.style.display = '';
     if (practicePanel) practicePanel.style.display = '';
     // Make sure paste area is always visible for custom (also after a previous game)
@@ -1310,6 +1497,7 @@ function initPictureGame(vocabulary) {
   function showSets() {
     if (menuView) menuView.style.display = 'none';
     if (customFlow) customFlow.style.display = 'none';
+    if (addWordsFlow) addWordsFlow.style.display = 'none';
     if (setsFlow) setsFlow.style.display = '';
     if (practicePanel) practicePanel.style.display = '';
 
@@ -1375,11 +1563,77 @@ function initPictureGame(vocabulary) {
   const startSetsBtn = document.getElementById('start-sets-btn');
   if (startSetsBtn) startSetsBtn.addEventListener('click', showSets);
 
+  const startAddWordsBtn = document.getElementById('start-add-words-btn');
+  if (startAddWordsBtn) startAddWordsBtn.addEventListener('click', showAddWords);
+
   const backCustom = document.getElementById('back-from-custom');
   if (backCustom) backCustom.addEventListener('click', showMenu);
 
   const backSets = document.getElementById('back-from-sets');
   if (backSets) backSets.addEventListener('click', showMenu);
+
+  const backAddWords = document.getElementById('back-from-add-words');
+  if (backAddWords) backAddWords.addEventListener('click', showMenu);
+
+  // ---- Add-your-own-words form ----
+  const addWordForm = document.getElementById('add-word-form');
+  const addWordCheckBtn = document.getElementById('add-word-check');
+
+  function readAddWordForm() {
+    return {
+      word: (document.getElementById('add-word')?.value || '').trim(),
+      article: (document.getElementById('add-article')?.value || '').trim(),
+      meaning: (document.getElementById('add-meaning')?.value || '').trim(),
+      level: Number(document.getElementById('add-level')?.value || 3),
+    };
+  }
+
+  if (addWordCheckBtn) {
+    addWordCheckBtn.addEventListener('click', () => {
+      const { word } = readAddWordForm();
+      if (!word) {
+        setAddWordStatus('Enter a German word to check.', true);
+        return;
+      }
+      const existing = findWordInLibrary(word);
+      if (!existing) {
+        setAddWordStatus(`“${word}” is <strong>not</strong> in the library — you can add it.`);
+        return;
+      }
+      const src = existing.userAdded
+        ? 'your added words'
+        : `the built-in library (${levelLabel(existing.level)})`;
+      const art = existing.article ? ` (${existing.article})` : '';
+      setAddWordStatus(
+        `Already in ${src}: <strong>${existing.word}</strong>${art} — ${existing.meaning || ''}`
+      );
+    });
+  }
+
+  if (addWordForm) {
+    addWordForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const data = readAddWordForm();
+      const result = addUserWord(data);
+      if (!result.ok) {
+        setAddWordStatus(result.reason || 'Could not add word.', true);
+        return;
+      }
+      const art = result.word.article ? ` (${result.word.article})` : '';
+      setAddWordStatus(
+        `✅ Added <strong>${result.word.word}</strong>${art} — ${result.word.meaning} [${levelLabel(result.word.level)}]`
+      );
+      const wordEl = document.getElementById('add-word');
+      const articleEl = document.getElementById('add-article');
+      const meaningEl = document.getElementById('add-meaning');
+      if (wordEl) wordEl.value = '';
+      if (articleEl) articleEl.value = '';
+      if (meaningEl) meaningEl.value = '';
+      if (wordEl) wordEl.focus();
+      renderUserWordsList();
+      updatePictureSetOptions();
+    });
+  }
 
   // Make the game "back to menu" button go to menu
   const backMenuBtn = document.getElementById('back-menu-btn');

@@ -30,7 +30,7 @@
         <div class="menu-intro">
           <h2>Practice German Vocabulary</h2>
           <p>Build your German word recognition with fun matching games.<br>
-          Two ways to practice:</p>
+          Practice with readings, ready-made sets, or words you add yourself:</p>
         </div>
 
         <div class="menu-cards">
@@ -47,9 +47,70 @@
             <p>Choose CEFR levels (A1–C2) and play with pre-grouped vocabulary sets. Perfect for regular daily practice.</p>
             <button id="start-sets-btn" class="btn btn-learned btn-large">Browse practice sets</button>
           </div>
+
+          <div class="menu-card">
+            <div class="menu-icon">➕</div>
+            <h3>Add your own words</h3>
+            <p>If a word is missing from the library, add German, article (optional), and English meaning. Saved in this browser and usable in extract + practice sets.</p>
+            <button id="start-add-words-btn" class="btn btn-learned btn-large">Add words to library</button>
+          </div>
         </div>
 
         <p class="menu-hint">Tip: Match German words with their English meanings. Correct answers reveal articles (der/die/das) too.</p>
+      </div>
+
+      <!-- ADD WORDS FLOW -->
+      <div id="add-words-flow" style="display:none;">
+        <button class="back-btn" id="back-from-add-words">← Back to menu</button>
+
+        <div class="section-header">
+          <strong>Add words to your library</strong>
+          <span class="hint">Only new words are saved. Duplicates of existing CEFR or your own words are skipped (case-insensitive).</span>
+        </div>
+
+        <form id="add-word-form" class="add-word-form">
+          <div class="add-word-fields">
+            <label class="add-field">
+              <span>German word</span>
+              <input type="text" id="add-word" required placeholder="e.g. Haus" autocomplete="off" maxlength="60">
+            </label>
+            <label class="add-field">
+              <span>Article (optional)</span>
+              <select id="add-article">
+                <option value="">— none (verb/adj/etc.)</option>
+                <option value="der">der</option>
+                <option value="die">die</option>
+                <option value="das">das</option>
+              </select>
+            </label>
+            <label class="add-field add-field-wide">
+              <span>English meaning</span>
+              <input type="text" id="add-meaning" required placeholder="house" autocomplete="off" maxlength="200">
+            </label>
+            <label class="add-field">
+              <span>CEFR level</span>
+              <select id="add-level">
+                <option value="1">A1</option>
+                <option value="2">A2</option>
+                <option value="3" selected>B1</option>
+                <option value="4">B2</option>
+                <option value="5">C1</option>
+                <option value="6">C2</option>
+              </select>
+            </label>
+          </div>
+          <div class="extract-actions">
+            <button type="submit" class="btn btn-primary" id="add-word-submit">Add word</button>
+            <button type="button" class="btn btn-secondary" id="add-word-check">Check if exists</button>
+          </div>
+          <div id="add-word-status" class="extract-info" aria-live="polite"></div>
+        </form>
+
+        <div class="section-header" style="margin-top:1.25rem;">
+          <strong>Your added words</strong>
+          <span class="hint" id="user-words-count">0 saved in this browser</span>
+        </div>
+        <div id="user-words-list" class="extracted-list user-words-list"></div>
       </div>
 
       <!-- CUSTOM READING FLOW -->
