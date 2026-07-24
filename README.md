@@ -1,59 +1,99 @@
-# Deutsch Vokabeln · German Word Matching
+# Deutsch Vokabeln · German Vocab Practice
 
-A bilingual German vocabulary learning game, adapted from the Chinese Word Matching project.
+A bilingual German (CEFR) vocabulary matching game, upgraded to match the Chinese Word Matching feature set.
 
 ## Modes
 
-- **Use your own reading** — Paste a German passage, filter by CEFR level, extract matching vocabulary, then play.
-- **Ready-made sets** — Pick A1–C2 levels and play with pre-grouped word sets (~20 words each).
+- **Reading practice** — Pick CEFR level → choose a passage from the graded **collection**, load **today’s reading** (open web + daily cache, collection fallback), or **paste** your own text. Extract words and play.
+- **Ready-made sets** — Practice A1–C2 word groups (~20 words each).
+- **My saved word sets** — Save extracted word lists to this browser and practice them again later.
+- **Add your own words** — Add missing vocabulary (and optional image URLs) stored in this browser.
 
 ## Features
 
-- CEFR vocabulary (A1–C2) — ~3,800 unique words (daily, work, media, academic)
-- Matching game: German word ↔ English meaning
+- CEFR vocabulary (A1–C2) — thousands of unique words
+- **Pictures** for matching when available:
+  1. **Shared library** (Supabase) — multi-user edits, survives deploys
+  2. Built-in map in `images.js` (optional Wikimedia URLs shipped with the site)
+  3. Live multi-source photo search when still missing (session / browser cache)
+  4. Text fallback (German + English) when no picture
+- **Edit pictures (shared)** — On any word list, click **Image** to:
+  - Search **Wikimedia**, **Openverse** (no keys), plus optional **Unsplash / Pexels / Pixabay**
+  - Compare thumbnails, pick the best, then **Save** to the shared library
+  - Force “no image”, or clear the shared entry
 - Correct answers reveal **articles** (`der` / `die` / `das`) for nouns
-- Browser text-to-speech (German)
-- High score saved in localStorage
-- Keyboard friendly (1–6 keys + **S** to hear a correct word)
+- High score, TTS pronunciation (German), keyboard (1–6, S)
 
-## How to Run
+## Shared image library (multi-user database)
 
-### Windows (recommended)
+Image links edited by players are stored in **Supabase Postgres**, not in the site deploy. Updating the site does **not** wipe the library.
 
-1. Double-click `start-game.bat`
-2. Browser opens at http://localhost:8080
+### One-time setup
 
-Requires [Node.js](https://nodejs.org/) (LTS).
+1. Create a free project at [supabase.com](https://supabase.com)
+2. SQL Editor → run `supabase/schema.sql`
+3. Copy `config.example.js` → `config.js` and set:
+   - `supabaseUrl` (Project Settings → API)
+   - `supabaseAnonKey` (anon public key)
+   - (Optional) photo API keys under `IMAGE_SEARCH_CONFIG` — see below
+4. Redeploy / refresh the site
 
-### Python alternative
+Until `config.js` is filled in, the game still works with `images.js` + Wikimedia/Openverse; **Save** will explain that the shared library is not configured.
 
+### Optional photo sources (Unsplash / Pexels / Pixabay)
+
+| Source | Key needed? | Notes |
+|--------|-------------|--------|
+| **Wikimedia Commons** | No | Default for built-in map + live fill |
+| **Openverse** | No | Creative Commons / public-domain aggregator |
+
+Optional free APIs (paste keys into `config.js` → `IMAGE_SEARCH_CONFIG`):
+
+| Source | Get a free key |
+|--------|----------------|
+| **Unsplash** | [unsplash.com/developers](https://unsplash.com/developers) → Access Key |
+| **Pexels** | [pexels.com/api](https://www.pexels.com/api/) |
+| **Pixabay** | [pixabay.com/api/docs](https://pixabay.com/api/docs/) |
+
+Keys in the browser are visible to users (normal for client-side demos). Prefer free-tier keys and domain restrictions if the provider supports them.
+
+### How multi-user edits work
+
+| Action | Effect |
+|--------|--------|
+| Save URL / Search / No image | Upsert row in `german_word_images` |
+| Use default | Deletes shared row → built-in map / live search again |
+| Many users | Last write wins per German word; everyone reads the same table |
+
+LocalStorage only caches the shared map for faster loads — **source of truth is Supabase**.
+
+## How to run
+
+### Windows
+1. Double-click `start-game.bat` (or `node server.js 8080`)
+2. Open http://localhost:8080
+
+### Python
 ```powershell
 cd "C:\Users\hoang\Projects\GermanWordMatching"
 python -m http.server 8080
 ```
 
-Then open http://localhost:8080
-
-### Direct file open
-
-Double-click `index.html` works for small files, but serving over HTTP is more reliable.
-
-## Controls
-
-**Matching game**
-
-- Click / tap the card where German matches English
-- **1–6** — select slot
-- **S** — speak a correct word (German TTS)
+Prefer HTTP over opening `index.html` directly (encoding + large JS files).
 
 ## Project files
 
 | File | Role |
 |------|------|
-| `index.html` | Main UI |
-| `main.js` | Bootstraps the game |
-| `picture-game.js` | Matching game + extract/sets logic |
+| `index.html` | UI + image edit modal |
+| `config.js` / `config.example.js` | Supabase + optional Unsplash/Pexels/Pixabay keys |
+| `image-library.js` | Shared library client (read/write Supabase) |
+| `supabase/schema.sql` | Database table + RLS policies |
+| `main.js` | Boot |
+| `picture-game.js` | Game, extract, user words, image UI, readings |
 | `vocabulary.js` | CEFR word list (`word`, `article`, `meaning`, `level`) |
+| `readings.js` | Graded A1–C2 reading collection |
+| `images.js` | Built-in word → image URL map (defaults) |
 | `styles.css` | Styling |
 | `server.js` + `start-game.bat` | Local static server |
 
@@ -65,12 +105,16 @@ Double-click `index.html` works for small files, but serving over HTTP is more r
 // article: "der" | "die" | "das" | "" (verbs, adjectives, etc.)
 ```
 
-## Roadmap ideas
+## Hosting (Netlify / GitHub Pages / etc.)
 
-- Expand vocabulary toward fuller A1–C2 coverage
-- Spaced repetition / flashcards mode
-- Custom word import
-- Dark mode
-- More game modes (typing, article-only drill)
+Upload static files including `config.js` (with your anon key).  
+The **image database stays in Supabase** across every deploy.
+
+## Controls
+
+**Matching game**
+
+- Tap the card where German matches the English meaning (or the correct picture pairing)
+- **1–6** select slot · **S** speak
 
 Viel Erfolg beim Deutschlernen!
