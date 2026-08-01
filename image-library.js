@@ -11,7 +11,7 @@
     enabled: false,
     ready: false,
     loading: null,
-    /** @type {Record<string, { url: string|null, article?: string, updated_at?: string }>} */
+    /** @type {Record<string, { url: string|null, article?: string, meaning?: string, updated_at?: string }>} */
     cache: {},
     supabaseUrl: '',
     supabaseAnonKey: '',
@@ -76,7 +76,7 @@
           for (;;) {
             const to = from + PAGE_SIZE - 1;
             const res = await fetch(
-              `${this._restBase()}?select=word,url,article,updated_at&order=word.asc`,
+              `${this._restBase()}?select=word,url,article,meaning,updated_at&order=word.asc`,
               {
                 headers: this._headers({
                   Range: `${from}-${to}`,
@@ -94,6 +94,7 @@
               next[row.word] = {
                 url: row.url === undefined ? null : row.url,
                 article: row.article || '',
+                meaning: row.meaning || '',
                 updated_at: row.updated_at || '',
               };
             }
@@ -153,6 +154,9 @@
       this.cache[key] = {
         url: normalized,
         article: meta.article || (this.cache[key] && this.cache[key].article) || '',
+        meaning: meta.meaning != null
+          ? String(meta.meaning)
+          : ((this.cache[key] && this.cache[key].meaning) || ''),
         updated_at: new Date().toISOString(),
       };
       this._persistCache();
@@ -165,7 +169,7 @@
         word: key,
         url: normalized,
         article: meta.article || '',
-        meaning: meta.meaning || '',
+        meaning: meta.meaning != null ? String(meta.meaning) : (this.cache[key].meaning || ''),
         updated_by: meta.updated_by || 'anon',
       };
 
@@ -190,11 +194,64 @@
         this.cache[key] = {
           url: rows[0].url === undefined ? normalized : rows[0].url,
           article: rows[0].article || '',
+          meaning: rows[0].meaning || '',
           updated_at: rows[0].updated_at || '',
         };
         this._persistCache();
       }
       return this.cache[key];
+    },
+
+    /**
+     * Update English meaning without wiping image URL.
+     * Creates a row with url=null if the word is not in the shared table yet.
+     */
+    async setMeaning(word, meaning, meta = {}) {
+      const key = (word || '').trim();
+      if (!key) throw new Error('Missing German word.');
+      const newMeaning = String(meaning || '').trim();
+      if (!newMeaning) throw new Error('Meaning cannot be empty.');
+
+      if (!this.enabled) {
+        throw new Error('Shared library is not configured. Add Supabase keys to config.js.');
+      }
+
+      const existing = this.cache[key];
+      const article = meta.article || (existing && existing.article) || '';
+
+      if (existing) {
+        const res = await fetch(
+          `${this._restBase()}?word=eq.${encodeURIComponent(key)}`,
+          {
+            method: 'PATCH',
+            headers: this._headers({ Prefer: 'return=representation' }),
+            body: JSON.stringify({
+              meaning: newMeaning,
+              article,
+              updated_by: meta.updated_by || 'anon',
+            }),
+          }
+        );
+        if (!res.ok) {
+          const text = await res.text().catch(() => '');
+          throw new Error(`Meaning save failed (${res.status}): ${text.slice(0, 200)}`);
+        }
+        const rows = await res.json().catch(() => []);
+        this.cache[key] = {
+          url: existing.url,
+          article: (rows[0] && rows[0].article) || article,
+          meaning: newMeaning,
+          updated_at: (rows[0] && rows[0].updated_at) || new Date().toISOString(),
+        };
+        this._persistCache();
+        return this.cache[key];
+      }
+
+      // No shared image row yet — do not create a null-url row (that would force "no picture").
+      // Caller still has local meaning override; return a soft skip marker.
+      const err = new Error('NO_SHARED_IMAGE_ROW');
+      err.code = 'NO_SHARED_IMAGE_ROW';
+      throw err;
     },
 
     /** Remove shared entry so built-in images.js (or live search) is used again. */

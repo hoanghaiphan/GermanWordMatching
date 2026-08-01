@@ -25,6 +25,8 @@ function levelLabel(level) {
 }
 
 const USER_VOCAB_KEY = 'german-user-vocabulary-v1';
+const MEANING_OVERRIDES_KEY = 'german-meaning-overrides-v1';
+const SAVED_READINGS_KEY = 'german-saved-readings-v1';
 
 /** Load user-added words from localStorage. */
 function loadUserVocabulary() {
@@ -61,18 +63,234 @@ function saveUserVocabulary(list) {
   }
 }
 
-/** Rebuild pictureVocabulary = built-in + user words (user wins on same word). */
+/** Local meaning overrides for any word (including built-in CEFR). */
+function loadMeaningOverrides() {
+  try {
+    const raw = localStorage.getItem(MEANING_OVERRIDES_KEY);
+    if (!raw) return {};
+    const obj = JSON.parse(raw);
+    return obj && typeof obj === 'object' ? obj : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveMeaningOverrides(map) {
+  try {
+    localStorage.setItem(MEANING_OVERRIDES_KEY, JSON.stringify(map || {}));
+  } catch (e) {
+    console.warn('Could not save meaning overrides', e);
+  }
+}
+
+/**
+ * Update English meaning for a word (local always; shared if configured + row exists).
+ * Works for CEFR built-ins and user words.
+ * @returns {{ ok: boolean, word?: object, shared?: string, reason?: string }}
+ */
+async function updateWordMeaning(wordKey, newMeaning, opts = {}) {
+  const key = (wordKey || '').trim();
+  const meaning = String(newMeaning || '').trim();
+  if (!key) return { ok: false, reason: 'Missing German word.' };
+  if (!meaning) return { ok: false, reason: 'Meaning cannot be empty.' };
+
+  const existing = findWordInLibrary(key);
+  const article = opts.article != null
+    ? String(opts.article || '').trim()
+    : ((existing && existing.article) || '');
+  const level = opts.level || (existing && existing.level) || 3;
+  // Preserve original casing from library when possible
+  const word = (existing && existing.word) || key;
+
+  // 1) Local override (always) — keyed case-insensitively via lower form + store display word
+  const overrides = loadMeaningOverrides();
+  const overrideKey = word.toLowerCase();
+  overrides[overrideKey] = {
+    word,
+    meaning,
+    article,
+    level,
+    updatedAt: new Date().toISOString(),
+  };
+  saveMeaningOverrides(overrides);
+
+  // Also keep user-vocab in sync if this was a user-added word
+  const userWords = loadUserVocabulary();
+  const ui = userWords.findIndex((w) => String(w.word).toLowerCase() === overrideKey);
+  if (ui >= 0) {
+    userWords[ui] = {
+      ...userWords[ui],
+      meaning,
+      article: article || userWords[ui].article,
+    };
+    saveUserVocabulary(userWords);
+  }
+
+  rebuildVocabularyWithUserWords();
+
+  // Patch in-memory game lists
+  const patchList = (list) => {
+    if (!Array.isArray(list)) return;
+    for (const w of list) {
+      if (w && String(w.word || '').toLowerCase() === overrideKey) w.meaning = meaning;
+    }
+  };
+  patchList(customWords);
+  patchList(practicedWords);
+  patchList(currentSetWords);
+
+  // 2) Shared library meaning (optional)
+  let shared = 'skipped';
+  const lib = sharedLibrary();
+  if (lib && lib.enabled && typeof lib.setMeaning === 'function') {
+    try {
+      await lib.setMeaning(word, meaning, { article });
+      shared = 'saved';
+    } catch (err) {
+      if (err && err.code === 'NO_SHARED_IMAGE_ROW') {
+        shared = 'local-only';
+      } else {
+        shared = err.message || 'error';
+      }
+    }
+  } else {
+    shared = 'not-configured';
+  }
+
+  const out = findWordInLibrary(word) || { word, article, meaning, level };
+  return { ok: true, word: out, shared };
+}
+
+/** Rebuild pictureVocabulary = built-in + user words + meaning overrides. */
 function rebuildVocabularyWithUserWords() {
   const userWords = loadUserVocabulary();
+  const overrides = loadMeaningOverrides();
   const byKey = new Map();
   for (const w of baseVocabulary) {
     if (w && w.word) byKey.set(String(w.word).toLowerCase(), { ...w, userAdded: false });
   }
+  // Shared library meanings (if already loaded)
+  const lib = typeof SharedImageLibrary !== 'undefined' ? SharedImageLibrary : null;
+  if (lib && lib.cache) {
+    for (const [wKey, entry] of Object.entries(lib.cache)) {
+      if (!entry || !entry.meaning) continue;
+      const lk = String(wKey).toLowerCase();
+      const cur = byKey.get(lk);
+      if (cur) {
+        byKey.set(lk, {
+          ...cur,
+          meaning: entry.meaning,
+          article: entry.article || cur.article,
+        });
+      }
+    }
+  }
   for (const w of userWords) {
     byKey.set(String(w.word).toLowerCase(), { ...w, userAdded: true });
   }
+  // Local meaning overrides win
+  for (const [lk, o] of Object.entries(overrides)) {
+    if (!o || !o.meaning) continue;
+    const cur = byKey.get(lk);
+    if (cur) {
+      byKey.set(lk, {
+        ...cur,
+        meaning: o.meaning,
+        article: o.article != null && o.article !== '' ? o.article : cur.article,
+        meaningOverride: true,
+      });
+    } else {
+      byKey.set(lk, {
+        word: o.word || lk,
+        article: o.article || '',
+        meaning: o.meaning,
+        level: o.level || 3,
+        userAdded: true,
+        meaningOverride: true,
+      });
+    }
+  }
   pictureVocabulary = Array.from(byKey.values());
   return userWords;
+}
+
+// ---- Local saved readings ----
+function loadSavedReadings() {
+  try {
+    const raw = localStorage.getItem(SAVED_READINGS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveSavedReadings(list) {
+  try {
+    localStorage.setItem(SAVED_READINGS_KEY, JSON.stringify(list || []));
+  } catch (e) {
+    console.warn('Could not save readings', e);
+  }
+}
+
+/**
+ * Save a reading to this browser.
+ * @param {{ title: string, text: string, description?: string, level?: number, source?: string }} reading
+ */
+function addSavedReading(reading) {
+  const title = String(reading.title || '').trim();
+  const text = String(reading.text || '').trim();
+  if (!title) throw new Error('Please enter a title for this reading.');
+  if (!text) throw new Error('No reading text to save.');
+
+  const list = loadSavedReadings();
+  const entry = {
+    id: `local-rd-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    title,
+    description: String(reading.description || '').trim(),
+    text,
+    level: Number(reading.level) || 0,
+    source: reading.source || 'user',
+    createdAt: new Date().toISOString(),
+    shared: false,
+  };
+  list.unshift(entry);
+  saveSavedReadings(list.slice(0, 50));
+  return entry;
+}
+
+function removeSavedReading(id) {
+  const next = loadSavedReadings().filter((r) => r.id !== id);
+  saveSavedReadings(next);
+  return next;
+}
+
+function sharedContentLibrary() {
+  return typeof SharedContentLibrary !== 'undefined' ? SharedContentLibrary : null;
+}
+
+function sharedContentEnabled() {
+  const lib = sharedContentLibrary();
+  return !!(lib && lib.enabled);
+}
+
+/** Snapshot of the current reading UI for save/share. */
+function getCurrentReadingSnapshot() {
+  const text = getActiveReadingText();
+  const titleEl = document.getElementById('lesson-reading-title');
+  const descEl = document.getElementById('lesson-reading-desc');
+  const levelSel = document.getElementById('reading-cefr-level');
+  const title = (titleEl && titleEl.textContent && titleEl.textContent !== 'Reading')
+    ? titleEl.textContent.trim()
+    : '';
+  return {
+    title,
+    description: (descEl && descEl.textContent) || '',
+    text,
+    level: Number(levelSel && levelSel.value) || 0,
+    source: 'user',
+  };
 }
 
 function findWordInLibrary(word) {
@@ -1949,29 +2167,129 @@ function endGame() {
     highScoreEl.textContent = String(highScore);
   }
 
-  // Show practiced words + meanings for review (great for learning)
-  const reviewEl = document.getElementById('practiced-review');
-  const listEl = document.getElementById('practiced-list');
-  if (reviewEl && listEl) {
-    listEl.innerHTML = '';
-    if (practicedWords.length > 0) {
-      practicedWords.slice(0, 8).forEach(w => {
-        const li = document.createElement('li');
-        const shortMeaning = (w.meaning || '').replace(/;/g, '; ').trim();
-        li.innerHTML = `
-          <span class="de-word">${w.word}</span>
-          <span class="de-article">${w.article || ''}</span>
-          <span class="meaning">— ${shortMeaning}</span>
-        `;
-        listEl.appendChild(li);
-      });
-      reviewEl.hidden = false;
-    } else {
-      reviewEl.hidden = true;
-    }
-  }
+  // Show practiced words + meanings for review (edit meaning supported)
+  renderPracticedReview();
 
   document.getElementById('picture-gameover').hidden = false;
+}
+
+/** Post-game review list with inline meaning edit. */
+function renderPracticedReview() {
+  const reviewEl = document.getElementById('practiced-review');
+  const listEl = document.getElementById('practiced-list');
+  if (!reviewEl || !listEl) return;
+
+  listEl.innerHTML = '';
+  if (!practicedWords.length) {
+    reviewEl.hidden = true;
+    return;
+  }
+
+  practicedWords.forEach((w, index) => {
+    const li = document.createElement('li');
+    li.className = 'practiced-item';
+    li.dataset.word = w.word || '';
+    li.dataset.index = String(index);
+    const shortMeaning = (w.meaning || '').replace(/;/g, '; ').trim();
+    li.innerHTML = `
+      <div class="practiced-item-main">
+        <span class="de-word">${w.word || ''}</span>
+        <span class="de-article">${w.article || ''}</span>
+        <span class="meaning practiced-meaning-text">— ${shortMeaning}</span>
+      </div>
+      <button type="button" class="btn btn-secondary practiced-edit-btn" data-index="${index}">Edit meaning</button>
+      <div class="practiced-edit-row" hidden>
+        <input type="text" class="practiced-meaning-input" value="${shortMeaning.replace(/"/g, '&quot;')}" maxlength="200" aria-label="English meaning for ${w.word || ''}">
+        <button type="button" class="btn btn-primary practiced-save-meaning" data-index="${index}">Save</button>
+        <button type="button" class="btn btn-secondary practiced-cancel-meaning" data-index="${index}">Cancel</button>
+      </div>
+      <p class="practiced-edit-status" aria-live="polite"></p>
+    `;
+    listEl.appendChild(li);
+  });
+
+  listEl.querySelectorAll('.practiced-edit-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.practiced-item');
+      if (!li) return;
+      const row = li.querySelector('.practiced-edit-row');
+      const input = li.querySelector('.practiced-meaning-input');
+      if (row) row.hidden = false;
+      btn.hidden = true;
+      if (input) {
+        input.focus();
+        input.select();
+      }
+    });
+  });
+
+  listEl.querySelectorAll('.practiced-cancel-meaning').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('.practiced-item');
+      if (!li) return;
+      const idx = Number(li.dataset.index);
+      const w = practicedWords[idx];
+      const row = li.querySelector('.practiced-edit-row');
+      const editBtn = li.querySelector('.practiced-edit-btn');
+      const input = li.querySelector('.practiced-meaning-input');
+      const status = li.querySelector('.practiced-edit-status');
+      if (row) row.hidden = true;
+      if (editBtn) editBtn.hidden = false;
+      if (input && w) input.value = (w.meaning || '').replace(/;/g, '; ').trim();
+      if (status) status.textContent = '';
+    });
+  });
+
+  listEl.querySelectorAll('.practiced-save-meaning').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const li = btn.closest('.practiced-item');
+      if (!li) return;
+      const idx = Number(li.dataset.index);
+      const w = practicedWords[idx];
+      const input = li.querySelector('.practiced-meaning-input');
+      const status = li.querySelector('.practiced-edit-status');
+      const meaningText = li.querySelector('.practiced-meaning-text');
+      const row = li.querySelector('.practiced-edit-row');
+      const editBtn = li.querySelector('.practiced-edit-btn');
+      if (!w || !input) return;
+
+      const newMeaning = input.value.trim();
+      if (!newMeaning) {
+        if (status) status.textContent = 'Meaning cannot be empty.';
+        return;
+      }
+
+      btn.disabled = true;
+      if (status) status.textContent = 'Saving…';
+      try {
+        const result = await updateWordMeaning(w.word, newMeaning, {
+          article: w.article,
+          level: w.level,
+        });
+        if (!result.ok) {
+          if (status) status.textContent = result.reason || 'Save failed.';
+          return;
+        }
+        w.meaning = newMeaning;
+        if (meaningText) meaningText.textContent = `— ${newMeaning}`;
+        if (row) row.hidden = true;
+        if (editBtn) editBtn.hidden = false;
+
+        let note = 'Saved locally';
+        if (result.shared === 'saved') note += ' and to shared library';
+        else if (result.shared === 'local-only') note += ' (shared image row not present for this word)';
+        else if (result.shared === 'not-configured') note += ' (shared library not configured)';
+        else if (result.shared && result.shared !== 'skipped') note += ` · shared: ${result.shared}`;
+        if (status) status.textContent = note + '.';
+      } catch (err) {
+        if (status) status.textContent = err.message || String(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
+  reviewEl.hidden = false;
 }
 
 function restartGame() {
@@ -2063,6 +2381,7 @@ function initPictureGame(vocabulary) {
   const lib = sharedLibrary();
   if (lib && lib.enabled) {
     lib.loadAll().then(() => {
+      rebuildVocabularyWithUserWords();
       updatePictureSetOptions();
       const listEl = document.getElementById('extracted-words-list');
       if (listEl && !listEl.hidden && customWords && customWords.length) {
@@ -2074,6 +2393,12 @@ function initPictureGame(vocabulary) {
       const status = document.getElementById('shared-library-status');
       if (status) status.textContent = lib.statusLabel();
     });
+  }
+
+  // Prefetch shared readings / word sets in the background
+  const contentLib = sharedContentLibrary();
+  if (contentLib && contentLib.enabled) {
+    contentLib.loadAll().catch(() => {});
   }
 
   // Don't auto-show word lists on load. Custom shows after extract; sets mode after Preview.
@@ -2338,9 +2663,77 @@ function initPictureGame(vocabulary) {
   }
 
   function updateSaveSetButton() {
-    const btn = document.getElementById('save-word-set-btn');
-    if (!btn) return;
-    btn.style.display = (customWords && customWords.length > 0) ? 'inline-block' : 'none';
+    const hasText = !!getActiveReadingText();
+    const hasWords = !!(customWords && customWords.length > 0);
+    const saveReadingBtn = document.getElementById('save-reading-btn');
+    const saveWordsBtn = document.getElementById('save-word-set-btn');
+    const saveBothBtn = document.getElementById('save-reading-and-words-btn');
+    const shareBtn = document.getElementById('share-reading-words-btn');
+    if (saveReadingBtn) saveReadingBtn.style.display = hasText ? 'inline-block' : 'none';
+    if (saveWordsBtn) saveWordsBtn.style.display = hasWords ? 'inline-block' : 'none';
+    if (saveBothBtn) saveBothBtn.style.display = (hasText && hasWords) ? 'inline-block' : 'none';
+    if (shareBtn) shareBtn.style.display = (hasText && hasWords) ? 'inline-block' : 'none';
+  }
+
+  function setSavedLibTab(tab) {
+    document.querySelectorAll('.saved-lib-tab').forEach((t) => {
+      t.classList.toggle('is-active', t.dataset.tab === tab);
+    });
+    const panels = {
+      'local-readings': document.getElementById('saved-tab-local-readings'),
+      'local-sets': document.getElementById('saved-tab-local-sets'),
+      shared: document.getElementById('saved-tab-shared'),
+    };
+    Object.entries(panels).forEach(([key, el]) => {
+      if (el) el.hidden = key !== tab;
+    });
+  }
+
+  function renderSavedReadingsList() {
+    const listEl = document.getElementById('saved-readings-list');
+    const emptyEl = document.getElementById('saved-readings-empty');
+    if (!listEl) return;
+    const readings = loadSavedReadings();
+    if (!readings.length) {
+      listEl.innerHTML = '';
+      if (emptyEl) emptyEl.hidden = false;
+      return;
+    }
+    if (emptyEl) emptyEl.hidden = true;
+    listEl.innerHTML = readings.map((r) => {
+      const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
+      const level = r.level ? levelLabel(r.level) : '';
+      const preview = String(r.text || '').slice(0, 48).replace(/</g, '&lt;');
+      return `<div class="saved-set-card" data-id="${r.id}">
+        <div class="saved-set-info">
+          <strong class="saved-set-name">${String(r.title || 'Untitled').replace(/</g, '&lt;')}</strong>
+          <span class="saved-set-meta">${[level, date].filter(Boolean).join(' · ')} · ${preview}${(r.text || '').length > 48 ? '…' : ''}</span>
+        </div>
+        <div class="saved-set-actions">
+          <button type="button" class="btn btn-learned saved-reading-load" data-id="${r.id}">Open</button>
+          <button type="button" class="btn btn-secondary saved-reading-delete" data-id="${r.id}">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll('.saved-reading-load').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const reading = loadSavedReadings().find((x) => x.id === id);
+        if (!reading) return;
+        loadSavedReadingIntoPractice(reading);
+      });
+    });
+    listEl.querySelectorAll('.saved-reading-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const reading = loadSavedReadings().find((x) => x.id === id);
+        if (!reading) return;
+        if (!confirm(`Delete saved reading “${reading.title}”?`)) return;
+        removeSavedReading(id);
+        renderSavedReadingsList();
+      });
+    });
   }
 
   function renderSavedSetsList() {
@@ -2388,6 +2781,122 @@ function initPictureGame(vocabulary) {
         renderSavedSetsList();
       });
     });
+  }
+
+  function renderSharedContentLists() {
+    const statusEl = document.getElementById('shared-content-status');
+    const rList = document.getElementById('shared-readings-list');
+    const sList = document.getElementById('shared-word-sets-list');
+    const lib = sharedContentLibrary();
+
+    if (!lib || !lib.enabled) {
+      if (statusEl) {
+        statusEl.textContent = 'Shared library is not configured. Add Supabase keys in config.js and run the latest supabase/schema.sql.';
+      }
+      if (rList) rList.innerHTML = '';
+      if (sList) sList.innerHTML = '';
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = lib.statusLabel();
+
+    const readings = lib.readings || [];
+    if (rList) {
+      if (!readings.length) {
+        rList.innerHTML = '<p class="extract-info">No shared readings yet. Use <strong>Share reading + words</strong> from Reading practice.</p>';
+      } else {
+        rList.innerHTML = readings.map((r) => {
+          const level = r.level ? levelLabel(r.level) : '';
+          const date = r.updated_at || r.created_at
+            ? new Date(r.updated_at || r.created_at).toLocaleDateString()
+            : '';
+          return `<div class="saved-set-card" data-id="${r.id}">
+            <div class="saved-set-info">
+              <strong class="saved-set-name">${String(r.title || 'Untitled').replace(/</g, '&lt;')}</strong>
+              <span class="saved-set-meta">${[level, date, 'shared'].filter(Boolean).join(' · ')}</span>
+            </div>
+            <div class="saved-set-actions">
+              <button type="button" class="btn btn-learned shared-reading-load" data-id="${r.id}">Open</button>
+            </div>
+          </div>`;
+        }).join('');
+        rList.querySelectorAll('.shared-reading-load').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const reading = (lib.readings || []).find((x) => x.id === btn.dataset.id);
+            if (reading) loadSavedReadingIntoPractice(reading);
+          });
+        });
+      }
+    }
+
+    const sets = lib.wordSets || [];
+    if (sList) {
+      if (!sets.length) {
+        sList.innerHTML = '<p class="extract-info">No shared word sets yet.</p>';
+      } else {
+        sList.innerHTML = sets.map((s) => {
+          const n = Array.isArray(s.words) ? s.words.length : 0;
+          const date = s.updated_at || s.created_at
+            ? new Date(s.updated_at || s.created_at).toLocaleDateString()
+            : '';
+          return `<div class="saved-set-card" data-id="${s.id}">
+            <div class="saved-set-info">
+              <strong class="saved-set-name">${String(s.name || 'Untitled').replace(/</g, '&lt;')}</strong>
+              <span class="saved-set-meta">${n} words${date ? ' · ' + date : ''} · shared</span>
+            </div>
+            <div class="saved-set-actions">
+              <button type="button" class="btn btn-learned shared-set-load" data-id="${s.id}">Practice</button>
+            </div>
+          </div>`;
+        }).join('');
+        sList.querySelectorAll('.shared-set-load').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const set = (lib.wordSets || []).find((x) => x.id === btn.dataset.id);
+            if (set && set.words?.length) loadSavedSetIntoPractice(set);
+          });
+        });
+      }
+    }
+  }
+
+  function loadSavedReadingIntoPractice(reading) {
+    if (menuView) menuView.style.display = 'none';
+    if (setsFlow) setsFlow.style.display = 'none';
+    if (addWordsFlow) addWordsFlow.style.display = 'none';
+    if (savedSetsFlow) savedSetsFlow.style.display = 'none';
+    if (customFlow) customFlow.style.display = '';
+    if (practicePanel) practicePanel.style.display = '';
+
+    applyReadingToUi({
+      title: reading.title,
+      description: reading.description || (reading.level ? levelLabel(reading.level) : 'Saved reading'),
+      text: reading.text,
+      level: reading.level || 0,
+    });
+    if (reading.level) {
+      const levelSel = document.getElementById('reading-cefr-level');
+      if (levelSel) levelSel.value = String(reading.level);
+      populateLessons(reading.level);
+    }
+
+    customWords = [];
+    unselectedWords = new Set();
+    currentImageMap = {};
+    const listEl = document.getElementById('extracted-words-list');
+    if (listEl) {
+      listEl.hidden = true;
+      listEl.innerHTML = '';
+    }
+    const infoEl = document.getElementById('custom-extract-info');
+    if (infoEl) {
+      infoEl.innerHTML = `Opened reading <strong>${String(reading.title || '').replace(/</g, '&lt;')}</strong>. Click <em>Extract words</em> to practice.`;
+    }
+    updateCustomClearButton();
+    updateSaveSetButton();
+    const listSection = document.getElementById('words-list-section');
+    if (listSection) listSection.hidden = false;
+    const hint = document.querySelector('.picture-highscore-hint');
+    if (hint) hint.style.display = '';
   }
 
   function loadSavedSetIntoPractice(set) {
@@ -2445,7 +2954,14 @@ function initPictureGame(vocabulary) {
     const gameOver = document.getElementById('picture-gameover');
     if (gameScreen) gameScreen.hidden = true;
     if (gameOver) gameOver.hidden = true;
+    setSavedLibTab('local-readings');
+    renderSavedReadingsList();
     renderSavedSetsList();
+    renderSharedContentLists();
+    const lib = sharedContentLibrary();
+    if (lib && lib.enabled) {
+      lib.loadAll().then(() => renderSharedContentLists()).catch(() => {});
+    }
   }
 
   function showCustom() {
@@ -2827,7 +3343,35 @@ function initPictureGame(vocabulary) {
     });
   }
 
-  // Save current extracted words as a named set
+  // ---- Save reading / word set (local) + share to shared library ----
+  function promptReadingTitle(defaultTitle) {
+    const name = window.prompt('Title for this reading:', defaultTitle || 'My reading');
+    if (name === null) return null;
+    return name.trim() || defaultTitle || 'My reading';
+  }
+
+  const saveReadingBtn = document.getElementById('save-reading-btn');
+  if (saveReadingBtn) {
+    saveReadingBtn.addEventListener('click', () => {
+      const snap = getCurrentReadingSnapshot();
+      if (!snap.text) {
+        if (infoEl) infoEl.textContent = 'Load or paste a reading first.';
+        return;
+      }
+      const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
+      if (title === null) return;
+      try {
+        const entry = addSavedReading({ ...snap, title });
+        if (infoEl) {
+          infoEl.innerHTML = `📖 Saved reading “${String(entry.title).replace(/</g, '&lt;')}” in this browser. Open <em>My saved library</em> anytime.`;
+        }
+        updateSaveSetButton();
+      } catch (err) {
+        if (infoEl) infoEl.textContent = err.message || String(err);
+      }
+    });
+  }
+
   const saveSetBtn = document.getElementById('save-word-set-btn');
   if (saveSetBtn) {
     saveSetBtn.addEventListener('click', () => {
@@ -2852,10 +3396,135 @@ function initPictureGame(vocabulary) {
           readingTitle: titleEl?.textContent || '',
         });
         if (infoEl) {
-          infoEl.innerHTML = `💾 Saved <strong>${entry.words.length}</strong> words as “${String(entry.name).replace(/</g, '&lt;')}”. Open <em>My saved word sets</em> from the menu anytime.`;
+          infoEl.innerHTML = `💾 Saved <strong>${entry.words.length}</strong> words as “${String(entry.name).replace(/</g, '&lt;')}”. Open <em>My saved library</em> from the menu anytime.`;
         }
       } catch (err) {
         if (infoEl) infoEl.textContent = err.message || String(err);
+      }
+    });
+  }
+
+  const saveBothBtn = document.getElementById('save-reading-and-words-btn');
+  if (saveBothBtn) {
+    saveBothBtn.addEventListener('click', () => {
+      const snap = getCurrentReadingSnapshot();
+      const words = getActiveExtractedWords().length
+        ? getActiveExtractedWords()
+        : (customWords || []);
+      if (!snap.text) {
+        if (infoEl) infoEl.textContent = 'Load or paste a reading first.';
+        return;
+      }
+      if (!words.length) {
+        if (infoEl) infoEl.textContent = 'Extract words first.';
+        return;
+      }
+      const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
+      if (title === null) return;
+      try {
+        const reading = addSavedReading({ ...snap, title });
+        const set = addSavedWordSet({
+          name: `${title} · words`,
+          words,
+          source: 'reading',
+          readingTitle: title,
+        });
+        if (infoEl) {
+          infoEl.innerHTML = `✅ Saved reading “${String(reading.title).replace(/</g, '&lt;')}” and word set (${set.words.length} words) in this browser.`;
+        }
+        updateSaveSetButton();
+      } catch (err) {
+        if (infoEl) infoEl.textContent = err.message || String(err);
+      }
+    });
+  }
+
+  const shareBothBtn = document.getElementById('share-reading-words-btn');
+  if (shareBothBtn) {
+    shareBothBtn.addEventListener('click', async () => {
+      const snap = getCurrentReadingSnapshot();
+      const words = getActiveExtractedWords().length
+        ? getActiveExtractedWords()
+        : (customWords || []);
+      if (!snap.text) {
+        if (infoEl) infoEl.textContent = 'Load or paste a reading first.';
+        return;
+      }
+      if (!words.length) {
+        if (infoEl) infoEl.textContent = 'Extract words first, then share.';
+        return;
+      }
+      if (!sharedContentEnabled()) {
+        if (infoEl) {
+          infoEl.textContent = 'Shared library is not configured. Add Supabase keys in config.js and run supabase/schema.sql (including the new readings/word-sets tables).';
+        }
+        return;
+      }
+      const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
+      if (title === null) return;
+
+      shareBothBtn.disabled = true;
+      if (infoEl) infoEl.textContent = 'Sharing reading + word set to shared library…';
+      try {
+        // Also keep local copies
+        try {
+          addSavedReading({ ...snap, title });
+          addSavedWordSet({
+            name: `${title} · words`,
+            words,
+            source: 'shared',
+            readingTitle: title,
+          });
+        } catch { /* local optional */ }
+
+        const lib = sharedContentLibrary();
+        const result = await lib.saveReadingAndWordSet(
+          {
+            title,
+            description: snap.description,
+            text: snap.text,
+            level: snap.level,
+            source: snap.source || 'user',
+          },
+          {
+            name: `${title} · words`,
+            words,
+            reading_title: title,
+            level: snap.level,
+          }
+        );
+        if (infoEl) {
+          infoEl.innerHTML = `🌐 Shared “${String(result.reading.title).replace(/</g, '&lt;')}” and <strong>${(result.wordSet.words || words).length}</strong> words to the shared library for everyone.`;
+        }
+      } catch (err) {
+        if (infoEl) infoEl.textContent = err.message || String(err);
+      } finally {
+        shareBothBtn.disabled = false;
+      }
+    });
+  }
+
+  // Saved library tabs
+  document.querySelectorAll('.saved-lib-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      setSavedLibTab(tab.dataset.tab || 'local-readings');
+    });
+  });
+  const refreshSharedBtn = document.getElementById('refresh-shared-content');
+  if (refreshSharedBtn) {
+    refreshSharedBtn.addEventListener('click', async () => {
+      const lib = sharedContentLibrary();
+      const statusEl = document.getElementById('shared-content-status');
+      if (!lib || !lib.enabled) {
+        if (statusEl) statusEl.textContent = 'Shared library is not configured.';
+        return;
+      }
+      if (statusEl) statusEl.textContent = 'Refreshing…';
+      try {
+        await lib.loadAll();
+        renderSharedContentLists();
+      } catch (err) {
+        if (statusEl) statusEl.textContent = err.message || String(err);
       }
     });
   }

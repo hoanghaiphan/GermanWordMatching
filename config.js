@@ -15,8 +15,10 @@ window.IMAGE_LIBRARY_CONFIG = {
   supabaseUrl: 'https://fcfezpjvmkvtwmqkrbdo.supabase.co',
   // Project Settings → API → anon public key
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZjZmV6cGp2bWt2dHdtcWtyYmRvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ5MjMzOTIsImV4cCI6MjEwMDQ5OTM5Mn0.-b4j1esqduAS9UY_VPbHIAfwWPwxf1aayV4ZL8U6CBA',
-  // Table name from schema.sql
+  // Table names from schema.sql
   table: 'german_word_images',
+  readingsTable: 'german_shared_readings',
+  wordSetsTable: 'german_shared_word_sets',
 };
 
 /**

@@ -6,7 +6,7 @@ A bilingual German (CEFR) vocabulary matching game, upgraded to match the Chines
 
 - **Reading practice** — Pick CEFR level → choose a passage from the graded **collection**, load **today’s reading** (open web + daily cache, collection fallback), or **paste** your own text. Extract words and play.
 - **Ready-made sets** — Practice A1–C2 word groups (~20 words each).
-- **My saved word sets** — Save extracted word lists to this browser and practice them again later.
+- **My saved library** — Save readings and word sets locally; **Share reading + words** uploads both to Supabase for all users. Edit English meanings on the post-game review list.
 - **Add your own words** — Add missing vocabulary (and optional image URLs) stored in this browser.
 
 ## Features
@@ -21,6 +21,7 @@ A bilingual German (CEFR) vocabulary matching game, upgraded to match the Chines
   - Search **Wikimedia**, **Openverse** (no keys), plus optional **Unsplash / Pexels / Pixabay**
   - Compare thumbnails, pick the best, then **Save** to the shared library
   - Force “no image”, or clear the shared entry
+- **Edit English meanings** after a game (saved locally; shared when a shared image row exists)
 - Correct answers reveal **articles** (`der` / `die` / `das`) for nouns
 - High score, TTS pronunciation (German), keyboard (1–6, S)
 
@@ -31,12 +32,14 @@ Image links edited by players are stored in **Supabase Postgres**, not in the si
 ### One-time setup
 
 1. Create a free project at [supabase.com](https://supabase.com)
-2. SQL Editor → run `supabase/schema.sql`
+2. SQL Editor → run `supabase/schema.sql` (includes word images, shared readings, and shared word sets)
 3. Copy `config.example.js` → `config.js` and set:
    - `supabaseUrl` (Project Settings → API)
    - `supabaseAnonKey` (anon public key)
    - (Optional) photo API keys under `IMAGE_SEARCH_CONFIG` — see below
 4. Redeploy / refresh the site
+
+If you already ran an older schema, run the new sections in `schema.sql` for `german_shared_readings` and `german_shared_word_sets`.
 
 Until `config.js` is filled in, the game still works with `images.js` + Wikimedia/Openverse; **Save** will explain that the shared library is not configured.
 
@@ -63,7 +66,8 @@ Keys in the browser are visible to users (normal for client-side demos). Prefer 
 |--------|--------|
 | Save URL / Search / No image | Upsert row in `german_word_images` |
 | Use default | Deletes shared row → built-in map / live search again |
-| Many users | Last write wins per German word; everyone reads the same table |
+| Share reading + words | Upsert into `german_shared_readings` + `german_shared_word_sets` |
+| Many users | Last write wins per German word / content id; everyone reads the same tables |
 
 LocalStorage only caches the shared map for faster loads — **source of truth is Supabase**.
 
@@ -87,8 +91,9 @@ Prefer HTTP over opening `index.html` directly (encoding + large JS files).
 |------|------|
 | `index.html` | UI + image edit modal |
 | `config.js` / `config.example.js` | Supabase + optional Unsplash/Pexels/Pixabay keys |
-| `image-library.js` | Shared library client (read/write Supabase) |
-| `supabase/schema.sql` | Database table + RLS policies |
+| `image-library.js` | Shared image library client (read/write Supabase) |
+| `shared-content.js` | Shared readings + word sets client |
+| `supabase/schema.sql` | Database tables + RLS policies |
 | `main.js` | Boot |
 | `picture-game.js` | Game, extract, user words, image UI, readings |
 | `vocabulary.js` | CEFR word list (`word`, `article`, `meaning`, `level`) |
@@ -99,16 +104,19 @@ Prefer HTTP over opening `index.html` directly (encoding + large JS files).
 
 ## Vocabulary schema
 
+Each entry in `vocabulary.js`:
+
 ```js
-{ word: "Haus", article: "das", meaning: "house", level: 1 }
-// level: 1=A1, 2=A2, 3=B1, 4=B2, 5=C1, 6=C2
-// article: "der" | "die" | "das" | "" (verbs, adjectives, etc.)
+{ word: 'Haus', article: 'das', meaning: 'house', level: 1 }
 ```
+
+- `article`: `der` / `die` / `das` / `''` (empty for non-nouns)
+- `level`: 1–6 for A1–C2
 
 ## Hosting (Netlify / GitHub Pages / etc.)
 
 Upload static files including `config.js` (with your anon key).  
-The **image database stays in Supabase** across every deploy.
+The **image / content database stays in Supabase** across every deploy.
 
 ## Controls
 

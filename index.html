@@ -50,9 +50,9 @@
 
           <div class="menu-card">
             <div class="menu-icon">💾</div>
-            <h3>My saved word sets</h3>
-            <p>Load word lists you saved from readings to practice again later. Stored in this browser.</p>
-            <button id="start-saved-sets-btn" class="btn btn-learned btn-large">Open saved sets</button>
+            <h3>My saved library</h3>
+            <p>Open readings and word sets you saved locally, or browse the multi-user shared library.</p>
+            <button id="start-saved-sets-btn" class="btn btn-learned btn-large">Open saved library</button>
           </div>
 
           <div class="menu-card">
@@ -213,7 +213,10 @@
 
           <div class="extract-actions">
             <button id="extract-custom-btn" class="btn btn-primary">Extract words from reading</button>
+            <button id="save-reading-btn" class="btn btn-secondary" style="display:none;">Save reading</button>
             <button id="save-word-set-btn" class="btn btn-secondary" style="display:none;">Save word set</button>
+            <button id="save-reading-and-words-btn" class="btn btn-secondary" style="display:none;">Save reading + words</button>
+            <button id="share-reading-words-btn" class="btn btn-learned" style="display:none;" title="Upload reading and word set to Supabase shared library">Share reading + words</button>
             <button id="clear-custom-btn" class="btn btn-secondary" style="display:none;">Clear</button>
           </div>
 
@@ -221,15 +224,38 @@
         </div>
       </div>
 
-      <!-- SAVED WORD SETS FLOW -->
+      <!-- SAVED LIBRARY FLOW (local readings + word sets + shared) -->
       <div id="saved-sets-flow" style="display:none;">
         <button class="back-btn" id="back-from-saved-sets">← Back to menu</button>
         <div class="section-header">
-          <strong>My saved word sets</strong>
-          <span class="hint">Sets you saved from readings. Stored in this browser only.</span>
+          <strong>My saved library</strong>
+          <span class="hint">Readings and word sets saved in this browser. Shared items load from Supabase when configured.</span>
         </div>
-        <div id="saved-sets-list" class="saved-sets-list"></div>
-        <p id="saved-sets-empty" class="extract-info" hidden>No saved sets yet. Extract words from a reading, then click <strong>Save word set</strong>.</p>
+
+        <div class="saved-lib-tabs" role="tablist">
+          <button type="button" class="saved-lib-tab is-active" data-tab="local-readings">My readings</button>
+          <button type="button" class="saved-lib-tab" data-tab="local-sets">My word sets</button>
+          <button type="button" class="saved-lib-tab" data-tab="shared">Shared library</button>
+        </div>
+
+        <div id="saved-tab-local-readings" class="saved-tab-panel">
+          <div id="saved-readings-list" class="saved-sets-list"></div>
+          <p id="saved-readings-empty" class="extract-info" hidden>No saved readings yet. Load or paste a reading, then click <strong>Save reading</strong>.</p>
+        </div>
+
+        <div id="saved-tab-local-sets" class="saved-tab-panel" hidden>
+          <div id="saved-sets-list" class="saved-sets-list"></div>
+          <p id="saved-sets-empty" class="extract-info" hidden>No saved word sets yet. Extract words, then click <strong>Save word set</strong>.</p>
+        </div>
+
+        <div id="saved-tab-shared" class="saved-tab-panel" hidden>
+          <p id="shared-content-status" class="extract-info"></p>
+          <button type="button" class="btn btn-secondary" id="refresh-shared-content" style="margin-bottom:0.75rem;">Refresh shared library</button>
+          <h4 class="saved-subhead">Shared readings</h4>
+          <div id="shared-readings-list" class="saved-sets-list"></div>
+          <h4 class="saved-subhead">Shared word sets</h4>
+          <div id="shared-word-sets-list" class="saved-sets-list"></div>
+        </div>
       </div>
 
       <!-- SETS header (shown only in sets mode, before the shared panel for correct order) -->
@@ -387,6 +413,7 @@
 
   <script src="config.js"></script>
   <script src="image-library.js"></script>
+  <script src="shared-content.js"></script>
   <script src="vocabulary.js" charset="utf-8"></script>
   <script src="images.js" charset="utf-8"></script>
   <script src="readings.js" charset="utf-8"></script>

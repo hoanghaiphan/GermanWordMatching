@@ -17,8 +17,10 @@ window.IMAGE_LIBRARY_CONFIG = {
   supabaseUrl: 'https://YOUR_PROJECT_REF.supabase.co',
   // Project Settings → API → anon public key
   supabaseAnonKey: 'YOUR_ANON_KEY',
-  // Table name from schema.sql
+  // Table names from schema.sql
   table: 'german_word_images',
+  readingsTable: 'german_shared_readings',
+  wordSetsTable: 'german_shared_word_sets',
 };
 
 /**
