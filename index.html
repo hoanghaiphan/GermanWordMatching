@@ -1,69 +1,94 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html lang="de">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Deutsch Vokabeln — CEFR matching game with pictures, readings, and a shared image library.">
+  <meta name="theme-color" content="#c23b3b" id="meta-theme-color">
+  <meta name="color-scheme" content="light">
   <title>Deutsch Vokabeln · German Vocab Practice</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23c23b3b'/%3E%3Ctext x='32' y='44' text-anchor='middle' font-size='36' font-family='system-ui,sans-serif' fill='white'%3ED%3C/text%3E%3C/svg%3E">
+  <script>
+    // Apply theme before paint to avoid flash
+    (function () {
+      try {
+        if (localStorage.getItem('gwm-theme-vaporwave') === '1') {
+          document.documentElement.classList.add('theme-vaporwave');
+        }
+      } catch (e) { /* private mode */ }
+    })();
+  </script>
   <link rel="stylesheet" href="styles.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
-  <div class="app">
-    <header class="header">
-      <div class="header-top">
-        <h1>Deutsch Vokabeln</h1>
-        <p class="subtitle">Practice German vocabulary with matching games</p>
-      </div>
+  <a class="skip-link" href="#mode-reading-games">Skip to content</a>
 
-      <nav class="mode-tabs" style="display:none;">
-        <!-- Flashcards removed. Only reading-based games now. -->
-      </nav>
+  <div id="app-boot" class="app-boot" role="status" aria-live="polite">
+    <div class="app-boot-card">
+      <div class="app-boot-mark" aria-hidden="true">D</div>
+      <p class="app-boot-title">Deutsch Vokabeln</p>
+      <p class="app-boot-msg" id="app-boot-msg">Loading vocabulary…</p>
+      <div class="app-boot-bar" aria-hidden="true"><span></span></div>
+    </div>
+  </div>
+
+  <div class="app" id="app-root" hidden>
+    <header class="header">
+      <div class="header-bar">
+        <div class="header-top">
+          <p class="header-kicker">CEFR · Matching · Pictures</p>
+          <h1>Deutsch Vokabeln</h1>
+          <p class="subtitle">Match German words · fix pictures · play</p>
+        </div>
+        <button type="button" id="theme-toggle" class="theme-toggle" aria-pressed="false" title="Toggle Vaporwave theme">
+          <span class="theme-toggle-icon" aria-hidden="true">🌴</span>
+          <span class="theme-toggle-label">Vaporwave</span>
+        </button>
+      </div>
     </header>
 
     <!-- Main area focused on reading-based games -->
-    <main class="main reading-games" id="mode-reading-games">
+    <main class="main reading-games" id="mode-reading-games" tabindex="-1">
 
       <!-- MENU / Home -->
-      <div id="menu-view">
+      <div id="menu-view" role="region" aria-label="Home menu">
         <div class="menu-intro">
-          <h2>Practice German Vocabulary</h2>
-          <p>Build your German word recognition with fun matching games.<br>
-          Practice with graded readings, saved word sets, ready-made CEFR groups, or words you add yourself:</p>
+          <h2>Practice German</h2>
+          <p>Pick your CEFR level, preview words, fix pictures, then play.</p>
         </div>
 
         <div class="menu-cards">
-          <div class="menu-card">
-            <div class="menu-icon">📖</div>
+          <button type="button" class="menu-card menu-card-btn" id="start-custom-btn" data-menu-action="readings">
+            <div class="menu-icon" aria-hidden="true">📖</div>
             <h3>Reading practice</h3>
-            <p>Pick a CEFR level, choose a passage from the collection, load today’s reading, or paste your own text. Extract words and play.</p>
-            <button id="start-custom-btn" class="btn btn-learned btn-large">Open readings</button>
-          </div>
+            <p>Collection, today’s reading, or paste your own text.</p>
+            <span class="menu-card-cta">Open readings</span>
+          </button>
 
-          <div class="menu-card">
-            <div class="menu-icon">📚</div>
-            <h3>Practice ready-made sets</h3>
-            <p>Choose CEFR levels (A1–C2) and play with pre-grouped vocabulary sets. Perfect for regular daily practice.</p>
-            <button id="start-sets-btn" class="btn btn-learned btn-large">Browse practice sets</button>
-          </div>
+          <button type="button" class="menu-card menu-card-btn" id="start-sets-btn" data-menu-action="sets">
+            <div class="menu-icon" aria-hidden="true">📚</div>
+            <h3>Practice sets</h3>
+            <p>Ready-made CEFR groups. Preview &amp; fix pictures first.</p>
+            <span class="menu-card-cta">Browse practice sets</span>
+          </button>
 
-          <div class="menu-card">
-            <div class="menu-icon">💾</div>
-            <h3>My saved library</h3>
-            <p>Open readings and word sets you saved locally, or browse the multi-user shared library.</p>
-            <button id="start-saved-sets-btn" class="btn btn-learned btn-large">Open saved library</button>
-          </div>
+          <button type="button" class="menu-card menu-card-btn" id="start-saved-sets-btn" data-menu-action="library">
+            <div class="menu-icon" aria-hidden="true">💾</div>
+            <h3>Saved library</h3>
+            <p>Your readings &amp; sets, plus shared library.</p>
+            <span class="menu-card-cta">Open saved library</span>
+          </button>
 
-          <div class="menu-card">
-            <div class="menu-icon">➕</div>
-            <h3>Add your own words</h3>
-            <p>If a word is missing from the library, add German, article (optional), and English meaning. Saved in this browser and usable in extract + practice sets.</p>
-            <button id="start-add-words-btn" class="btn btn-learned btn-large">Add words to library</button>
-          </div>
+          <button type="button" class="menu-card menu-card-btn" id="start-add-words-btn" data-menu-action="add">
+            <div class="menu-icon" aria-hidden="true">➕</div>
+            <h3>Add words</h3>
+            <p>Add missing German, article, and English.</p>
+            <span class="menu-card-cta">Add words</span>
+          </button>
         </div>
-
-        <p class="menu-hint">Tip: Match German with English (or the correct picture). You can fix wrong pictures with the Image button on word lists. Correct matches reveal articles (der/die/das).</p>
       </div>
 
       <!-- ADD WORDS FLOW -->
@@ -71,8 +96,8 @@
         <button class="back-btn" id="back-from-add-words">← Back to menu</button>
 
         <div class="section-header">
-          <strong>Add words to your library</strong>
-          <span class="hint">Only new words are saved. Duplicates of existing CEFR or your own words are skipped (case-insensitive).</span>
+          <strong>Add words</strong>
+          <span class="hint">Duplicates of existing CEFR or your words are skipped (case-insensitive).</span>
         </div>
 
         <form id="add-word-form" class="add-word-form">
@@ -115,7 +140,6 @@
           </div>
           <div class="extract-actions">
             <button type="submit" class="btn btn-primary" id="add-word-submit">Add word</button>
-            <button type="button" class="btn btn-secondary" id="add-word-check">Check if exists</button>
           </div>
           <div id="add-word-status" class="extract-info" aria-live="polite"></div>
         </form>
@@ -134,7 +158,7 @@
         <div class="custom-reading" id="reading-input">
           <div class="section-header">
             <strong>Reading practice</strong>
-            <span class="hint">1) Choose CEFR level · 2) Pick a collection reading, today’s reading, or paste your own · 3) Extract words &amp; play</span>
+            <span class="hint">CEFR level → source → extract → fix pictures → play</span>
           </div>
 
           <!-- Step 1: primary CEFR level for collection / daily -->
@@ -171,37 +195,38 @@
 
           <!-- Daily reading -->
           <div id="reading-source-daily" class="reading-source-panel" hidden>
-            <p class="reading-daily-blurb">Loads one reading for the selected CEFR level for <strong>today</strong> (same day → same text). Tries an open web source first, then falls back to the graded collection.</p>
-            <button type="button" class="btn btn-primary" id="load-daily-reading">Load today’s reading</button>
+            <p class="reading-daily-blurb">Stories &amp; news matched to your CEFR level. Click again anytime for a new one.</p>
+            <div class="daily-actions">
+              <button type="button" class="btn btn-primary" id="load-daily-reading">New reading</button>
+            </div>
             <p id="daily-reading-status" class="extract-info" aria-live="polite"></p>
           </div>
 
           <!-- Paste -->
-          <div id="reading-source-paste" class="reading-source-panel" hidden>
-            <label class="reading-field-label" for="custom-reading-text">Your German text</label>
-            <textarea id="custom-reading-text" rows="6" placeholder="Paste German text here, e.g. a short story or dialogue..."></textarea>
+          <div id="reading-source-paste" class="reading-source-panel paste-panel" hidden>
+            <label class="reading-field-label" for="custom-reading-text">Paste German text</label>
+            <textarea id="custom-reading-text" class="paste-textarea" rows="8" placeholder="Paste a short story, dialogue, or article in German…"></textarea>
+            <p class="paste-hint">Set CEFR levels below, then Extract words.</p>
           </div>
 
-          <!-- Shared text display / editor after load -->
+          <!-- Single editable reading surface after load -->
           <div id="lesson-reading" class="lesson-reading-box" hidden>
             <div class="lesson-reading-header">
               <strong id="lesson-reading-title">Reading</strong>
               <span id="lesson-reading-desc" class="lesson-desc"></span>
             </div>
-            <div id="lesson-reading-body" class="lesson-reading-body"></div>
-            <p class="reading-edit-hint">You can edit the text below before extracting words.</p>
-            <textarea id="active-reading-text" rows="5" class="active-reading-textarea" hidden></textarea>
+            <textarea id="active-reading-text" rows="6" class="active-reading-textarea" hidden placeholder="Reading text (editable before extract)"></textarea>
           </div>
 
           <!-- Extract filters: include this level and below by default -->
-          <div class="hsk-levels level-filters">
+          <div class="hsk-levels">
             <span class="hsk-label">Extract words at CEFR level(s):</span>
             <div class="checkbox-group">
               <label class="hsk-cb"><input type="checkbox" value="1" checked> A1</label>
               <label class="hsk-cb"><input type="checkbox" value="2" checked> A2</label>
               <label class="hsk-cb"><input type="checkbox" value="3" checked> B1</label>
-              <label class="hsk-cb"><input type="checkbox" value="4"> B2</label>
-              <label class="hsk-cb"><input type="checkbox" value="5"> C1</label>
+              <label class="hsk-cb"><input type="checkbox" value="4" checked> B2</label>
+              <label class="hsk-cb"><input type="checkbox" value="5" checked> C1</label>
               <label class="hsk-cb"><input type="checkbox" value="6"> C2</label>
             </div>
             <div class="level-actions">
@@ -212,11 +237,9 @@
           </div>
 
           <div class="extract-actions">
-            <button id="extract-custom-btn" class="btn btn-primary">Extract words from reading</button>
-            <button id="save-reading-btn" class="btn btn-secondary" style="display:none;">Save reading</button>
-            <button id="save-word-set-btn" class="btn btn-secondary" style="display:none;">Save word set</button>
-            <button id="save-reading-and-words-btn" class="btn btn-secondary" style="display:none;">Save reading + words</button>
-            <button id="share-reading-words-btn" class="btn btn-learned" style="display:none;" title="Upload reading and word set to Supabase shared library">Share reading + words</button>
+            <button id="extract-custom-btn" class="btn btn-primary">Extract words</button>
+            <button id="save-local-btn" class="btn btn-secondary" style="display:none;" title="Save reading and/or word set in this browser">Save</button>
+            <button id="share-reading-words-btn" class="btn btn-learned" style="display:none;" title="Upload reading and word set to Supabase shared library">Share</button>
             <button id="clear-custom-btn" class="btn btn-secondary" style="display:none;">Clear</button>
           </div>
 
@@ -228,8 +251,8 @@
       <div id="saved-sets-flow" style="display:none;">
         <button class="back-btn" id="back-from-saved-sets">← Back to menu</button>
         <div class="section-header">
-          <strong>My saved library</strong>
-          <span class="hint">Readings and word sets saved in this browser. Shared items load from Supabase when configured.</span>
+          <strong>Saved library</strong>
+          <span class="hint">Local saves in this browser · Shared via Supabase when configured</span>
         </div>
 
         <div class="saved-lib-tabs" role="tablist">
@@ -263,13 +286,13 @@
         <button class="back-btn" id="back-from-sets">← Back to menu</button>
 
         <div class="section-header">
-          <strong>Practice Ready-Made Sets</strong>
-          <span class="hint">Pick CEFR levels, choose a word group, then press Preview to select words before playing.</span>
+          <strong>Practice sets</strong>
+          <span class="hint">CEFR levels → set → Preview &amp; fix pictures → Play</span>
         </div>
 
         <!-- CEFR for sets mode (controls the shared panel) -->
-        <div class="hsk-levels level-filters sets-hsk sets-level-filters sets-cefr-filters">
-          <span class="hsk-label">Filter by CEFR level(s):</span>
+        <div class="hsk-levels sets-hsk">
+          <span class="hsk-label">Your CEFR level(s):</span>
           <div class="checkbox-group">
             <label class="hsk-cb"><input type="checkbox" value="1" checked class="sets-level"> A1</label>
             <label class="hsk-cb"><input type="checkbox" value="2" checked class="sets-level"> A2</label>
@@ -291,39 +314,27 @@
         <div class="word-list-section" id="words-list-section">
           <!-- Set picker: only for ready-made sets mode (hidden in custom reading) -->
           <div class="level-picker" id="set-picker">
-            <label for="set-select">Game set (groups of ~20 words):</label>
+            <label for="set-select">Game set (~20 words):</label>
             <div class="set-picker-row">
               <select id="set-select"></select>
-              <button type="button" id="preview-set-btn" class="btn btn-secondary">Preview words</button>
+              <button type="button" id="preview-set-btn" class="btn btn-secondary">Preview &amp; fix pictures</button>
             </div>
           </div>
 
           <div class="section-header" id="words-list-header">
             <strong>Words</strong>
-            <span class="hint">Select or uncheck words. Use the game below. Fix pictures with Image.</span>
+            <span class="hint">Uncheck to skip · Image edits picture &amp; meaning</span>
           </div>
           <div id="extracted-words-list" class="extracted-list" hidden></div>
         </div>
 
-        <!-- 3. Games -->
-        <div class="games-from-reading">
-          <div class="section-header">
-            <strong>Games</strong>
-          </div>
-
-          <div class="game-cards">
-            <div class="game-card">
-              <h3>Matching Game</h3>
-              <p>Tap the card where the German word matches the English meaning (or picture). Larger targets for phones. Correct matches reveal articles (der/die/das) for learning.</p>
-              <div class="game-actions">
-                <button class="btn btn-learned" id="start-picture-game">Start matching game</button>
-              </div>
-            </div>
-          </div>
+        <!-- Play control (sticky on small screens when list is ready) -->
+        <div class="play-bar" id="play-bar">
+          <p class="play-bar-meta">High score: <span id="start-high-score">0</span></p>
+          <button class="btn btn-learned btn-large" id="start-picture-game">Play matching game</button>
         </div>
       </div> <!-- end #practice-panel -->
 
-      <p class="picture-highscore-hint">High score: <span id="start-high-score">0</span></p>
       <div id="picture-game-screen" class="picture-game" hidden>
         <div class="picture-hud">
           <div class="hud-item">
@@ -331,11 +342,11 @@
             <span class="hud-value" id="picture-score">0</span>
           </div>
           <div class="hud-item">
-            <span class="hud-label">Matches on screen</span>
+            <span class="hud-label">Matches</span>
             <span class="hud-value" id="picture-hint-count">1</span>
           </div>
         </div>
-        <p class="picture-rule">Tap the card where the German word matches the English meaning. Correct matches reveal articles for learning.</p>
+        <p class="picture-rule">Tap the card that matches. Correct answers show articles (der/die/das).</p>
         <div class="picture-grid" id="picture-grid"></div>
       </div>
 
@@ -345,7 +356,8 @@
         <p class="gameover-highscore">High score: <span id="high-score">0</span></p>
 
         <div id="practiced-review" class="practiced-review" hidden>
-          <p class="review-title">Words you practiced:</p>
+          <p class="review-title">Words you practiced</p>
+          <p class="review-hint">Edit meaning here, or use <strong>Image</strong> on the word list before the next game.</p>
           <ul id="practiced-list" class="practiced-list"></ul>
         </div>
 
@@ -358,20 +370,33 @@
 
     <footer class="footer">
       <p>Practice a little every day — Jeden Tag ein bisschen üben</p>
+      <p class="footer-meta">A1–C2 · keyboard 1–6 / S · local + shared library</p>
     </footer>
   </div>
 
-  <!-- Image edit modal -->
+  <div id="app-toast" class="app-toast" hidden role="status" aria-live="polite"></div>
+
+  <!-- Image + meaning edit modal -->
   <div id="image-edit-modal" class="image-edit-modal" hidden>
     <div class="image-edit-backdrop"></div>
-    <div class="image-edit-dialog" role="dialog" aria-labelledby="image-edit-title">
+    <div class="image-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="image-edit-title">
       <div class="image-edit-header">
-        <h3 id="image-edit-title">Picture for <span id="image-edit-word"></span></h3>
+        <h3 id="image-edit-title">Edit <span id="image-edit-word"></span></h3>
         <button type="button" class="image-edit-x" id="image-edit-close" aria-label="Close">×</button>
       </div>
       <p id="image-edit-meta" class="image-edit-meta"></p>
       <p id="image-edit-shared-hint" class="image-edit-shared-hint"></p>
       <div id="image-edit-preview" class="image-edit-preview"></div>
+
+      <label class="add-field image-edit-meaning-field" id="image-edit-article-wrap">
+        <span>Article (optional)</span><select id="image-edit-article"><option value="">— none —</option><option value="der">der</option><option value="die">die</option><option value="das">das</option></select>
+      </label>
+
+      <label class="add-field image-edit-meaning-field">
+        <span>English meaning</span>
+        <input type="text" id="image-edit-meaning" placeholder="e.g. apple" autocomplete="off" maxlength="200">
+      </label>
+
       <label class="add-field" style="margin:0.75rem 0;">
         <span>Image URL (https only)</span>
         <div class="url-field-row">
@@ -382,7 +407,7 @@
 
       <div class="image-search-panel">
         <label class="add-field" style="margin:0;">
-          <span>Search query (English)</span>
+          <span>Search photos (English)</span>
           <div class="url-field-row">
             <input type="text" id="image-edit-query" placeholder="e.g. red apple" autocomplete="off" maxlength="120">
             <button type="button" class="btn btn-secondary" id="image-edit-search" title="Search free photo sources">Search</button>
@@ -392,18 +417,18 @@
           <button type="button" class="image-source-chip is-active" data-source="all">All</button>
           <button type="button" class="image-source-chip" data-source="wikimedia">Wikimedia</button>
           <button type="button" class="image-source-chip" data-source="openverse">Openverse</button>
-          <button type="button" class="image-source-chip" data-source="unsplash">Unsplash</button>
-          <button type="button" class="image-source-chip" data-source="pexels">Pexels</button>
-          <button type="button" class="image-source-chip" data-source="pixabay">Pixabay</button>
+          <button type="button" class="image-source-chip" data-source="unsplash" hidden>Unsplash</button>
+          <button type="button" class="image-source-chip" data-source="pexels" hidden>Pexels</button>
+          <button type="button" class="image-source-chip" data-source="pixabay" hidden>Pixabay</button>
         </div>
-        <p class="image-search-hint" id="image-search-hint">Wikimedia &amp; Openverse need no key. Add Unsplash / Pexels / Pixabay keys in config.js for more photos.</p>
+        <p class="image-search-hint" id="image-search-hint">Wikimedia &amp; Openverse need no key.</p>
         <div id="image-edit-results" class="image-edit-results" hidden></div>
         <p id="image-edit-attribution" class="image-edit-attribution" hidden></p>
       </div>
 
       <p id="image-edit-status" class="image-edit-status"></p>
       <div class="image-edit-actions">
-        <button type="button" class="btn btn-primary" id="image-edit-save">Save to shared library</button>
+        <button type="button" class="btn btn-primary" id="image-edit-save">Save</button>
         <button type="button" class="btn btn-secondary" id="image-edit-none">No image</button>
         <button type="button" class="btn btn-secondary" id="image-edit-reset">Use default</button>
         <button type="button" class="btn btn-secondary" id="image-edit-cancel">Cancel</button>
@@ -411,6 +436,18 @@
     </div>
   </div>
 
+  <script>
+    // Progressive boot messages while large vocabulary/image maps load
+    (function () {
+      var msg = document.getElementById('app-boot-msg');
+      var steps = ['Loading vocabulary…', 'Loading pictures…', 'Starting game…'];
+      var i = 0;
+      window.__bootTimer = setInterval(function () {
+        i = Math.min(i + 1, steps.length - 1);
+        if (msg) msg.textContent = steps[i];
+      }, 700);
+    })();
+  </script>
   <script src="config.js"></script>
   <script src="image-library.js"></script>
   <script src="shared-content.js"></script>
@@ -421,3 +458,5 @@
   <script src="main.js"></script>
 </body>
 </html>
+
+

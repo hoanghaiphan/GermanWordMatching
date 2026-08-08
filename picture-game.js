@@ -1,4 +1,4 @@
-const SLOT_COUNT = 6;
+﻿const SLOT_COUNT = 6;
 const SET_SIZE = 20;
 const SLOT_MAX_AGE_MS = 8000;
 const POINTS_PER_CORRECT = 10;
@@ -364,7 +364,9 @@ function getReadingCollection() {
 }
 
 const SAVED_WORD_SETS_KEY = 'german-saved-word-sets-v1';
-const DAILY_READING_CACHE_KEY = 'german-daily-reading-cache-v1';
+const DAILY_READING_CACHE_KEY = 'german-daily-reading-cache-v3';
+/** Soft cap for practice text; longer extracts are truncated at a sentence with a notice. */
+const DAILY_READING_MAX_CHARS = 2000;
 
 function loadSavedWordSets() {
   try {
@@ -436,52 +438,202 @@ function localDateKey(date = new Date()) {
 }
 
 /**
- * Score German text for CEFR suitability: fraction of matched tokens at or below level.
- * Higher is better for graded daily readings.
+ * Score German text for CEFR suitability (known words only).
  */
 function scoreTextForLevel(text, vocab, maxLevel) {
-  const words = extractWordsFromCustomText(text, vocab, []);
+  const words = extractWordsFromCustomText(text, vocab, [], { includeUnknown: false });
   if (!words.length) return { score: 0, matched: 0, atOrBelow: 0 };
   const atOrBelow = words.filter((w) => Number(w.level) <= maxLevel).length;
   const score = atOrBelow / words.length;
   return { score, matched: words.length, atOrBelow };
 }
 
+function scoreReadingQuality(text, vocab, maxLevel) {
+  const h = scoreTextForLevel(text, vocab, maxLevel);
+  const t = String(text || '').trim();
+  let rank = h.score * 55 + Math.min(h.matched, 36) * 0.9 + Math.min(h.atOrBelow, 28) * 0.35;
+  const len = t.length;
+  if (len >= 120 && len <= 1600) rank += 18;
+  else if (len >= 80 && len <= 2000) rank += 12;
+  else if (len < 45) rank -= 25;
+  else if (len > 2200) rank -= 6;
+  const sentences = (t.match(/[.!?…]/g) || []).length;
+  rank += Math.min(sentences, 10) * 2.2;
+  if (/(Freund|Familie|Schule|Stadt|Essen|reisen|heute|morgen|sagen|fragen|möchten|Haus)/i.test(t)) rank += 10;
+  if (/(Fest|Musik|Sport|Tier|Wald|Meer|Buch|Film)/i.test(t)) rank += 6;
+  return { rank, ...h };
+}
+
 /**
- * Fetch a short German Wikipedia summary (open API). May fail CORS / rate limits.
+ * Normalize reading text for practice.
+ * Keeps full text when possible; only soft-caps very long extracts at a sentence boundary.
+ * @returns {{ text: string, truncated: boolean, fullLength: number, maxLen: number }}
  */
+function normalizeReadingText(extract, maxLen = DAILY_READING_MAX_CHARS) {
+  const full = String(extract || '').trim().replace(/\r\n/g, '\n');
+  const fullLength = full.length;
+  if (!fullLength) {
+    return { text: '', truncated: false, fullLength: 0, maxLen };
+  }
+  if (fullLength <= maxLen) {
+    return { text: full, truncated: false, fullLength, maxLen };
+  }
+  let window = full.slice(0, maxLen);
+  const cutMarks = ['. ', '! ', '? ', '.\n', '!\n', '?\n', '…', '\n\n'];
+  let cut = -1;
+  for (const m of cutMarks) {
+    const i = window.lastIndexOf(m);
+    if (i > cut) cut = i + (m.endsWith(' ') || m.endsWith('\n') ? m.length - 1 : m.length);
+  }
+  // also bare . ! ?
+  for (const m of ['.', '!', '?']) {
+    const i = window.lastIndexOf(m);
+    if (i > cut) cut = i;
+  }
+  const minKeep = Math.min(400, Math.floor(maxLen * 0.35));
+  let text;
+  if (cut >= minKeep) {
+    text = full.slice(0, cut + 1).trim();
+  } else {
+    text = window.trim();
+  }
+  if (!/[.!?…\u2026]$/.test(text)) text += '…';
+  return { text, truncated: true, fullLength, maxLen };
+}
+
+function trimReadingText(extract, maxLen = DAILY_READING_MAX_CHARS) {
+  return normalizeReadingText(extract, maxLen).text;
+}
+
+/**
+ * Fetch longer plain-text extract via MediaWiki API (fuller than REST summary).
+ */
+async function fetchWikiPlainExtract(lang, title, maxChars = DAILY_READING_MAX_CHARS) {
+  const host = lang === 'de' ? 'de.wikipedia.org'
+    : lang === 'de-news' ? 'de.wikinews.org'
+      : lang === 'zh-news' ? 'zh.wikinews.org'
+        : 'zh.wikipedia.org';
+  const url = `https://${host}/w/api.php?` + new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    origin: '*',
+    prop: 'extracts',
+    explaintext: '1',
+    exsectionformat: 'plain',
+    redirects: '1',
+    titles: title,
+    exchars: String(Math.min(Math.max(maxChars, 800), 2500)),
+  });
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Wiki extract ${res.status}`);
+  const data = await res.json();
+  const pages = data && data.query && data.query.pages;
+  if (!pages) throw new Error('No extract pages');
+  const page = Object.values(pages)[0];
+  if (!page || page.missing != null) throw new Error('Page missing');
+  const extract = String(page.extract || '').trim();
+  if (extract.length < 36) throw new Error('Extract too short');
+  return extract;
+}
+
+async function expandWikiReading(item, lang) {
+  if (!item || !item.rawTitle) return item;
+  try {
+    const fullExtract = await fetchWikiPlainExtract(lang, item.rawTitle, DAILY_READING_MAX_CHARS);
+    if (fullExtract.length > (item.text || '').length + 40) {
+      const norm = normalizeReadingText(fullExtract, DAILY_READING_MAX_CHARS);
+      return {
+        ...item,
+        text: norm.text,
+        truncated: norm.truncated,
+        fullLength: norm.fullLength,
+        expanded: true,
+      };
+    }
+  } catch { /* keep summary */ }
+  return item;
+}
+
+function parseDeWikiSummary(data, sourceLabel, sourceKey) {
+  const title = data.title || sourceLabel;
+  const extract = (data.extract || '').trim();
+  if (!extract || extract.length < 36) throw new Error('Empty extract');
+  if (/steht für|Begriffsklärung/i.test(extract) && extract.length < 120) throw new Error('Disambiguation');
+  const norm = normalizeReadingText(extract, DAILY_READING_MAX_CHARS);
+  if (norm.text.length < 36) throw new Error('Too short');
+  return {
+    title: `${sourceLabel} · ${title}`,
+    description: data.description || sourceLabel,
+    text: norm.text,
+    truncated: norm.truncated,
+    fullLength: norm.fullLength,
+    source: sourceKey,
+    pageUrl: data.content_urls?.desktop?.page || data.content_urls?.mobile?.page || '',
+    rawTitle: title,
+  };
+}
+
+function readingLengthNote(reading) {
+  if (!reading) return '';
+  const n = (reading.text || '').length;
+  if (reading.truncated && reading.fullLength) {
+    return `Long article — showing first ~${n} characters of ${reading.fullLength} (edit the box or paste more if you want the rest).`;
+  }
+  if (n >= 900) return `Full reading loaded (${n} characters).`;
+  if (n > 0) return `Reading length: ${n} characters.`;
+  return '';
+}
+
+const DAILY_INTERESTING_TITLES_DE = [
+  'Oktoberfest', 'Weihnachten', 'Ostern', 'Karneval', 'Silvester',
+  'Berlin', 'München', 'Hamburg', 'Köln', 'Wien', 'Zürich', 'Alpen',
+  'Bratwurst', 'Brezel', 'Schnitzel', 'Kaffee', 'Brot', 'Käse',
+  'Fußball', 'Radfahren', 'Wandern', 'Schule', 'Bibliothek',
+  'Brandenburgertor', 'Neuschwanstein', 'Rhein', 'Donau', 'Schwarzwald',
+  'Beethoven', 'Goethe', 'Grimm', 'Märchen', 'Bruder', 'Familie',
+  'Zug', 'Fahrrad', 'Park', 'Museum', 'Kino', 'Musik',
+];
+
+function seededDailyTitlePicksDe(day, level, count, refreshOffset = 0) {
+  const seed = String(day).split('').reduce((a, c) => a + c.charCodeAt(0), 0)
+    + level * 31 + Number(refreshOffset || 0) * 97;
+  const picks = [];
+  const n = DAILY_INTERESTING_TITLES_DE.length;
+  for (let i = 0; i < count * 2 && picks.length < count; i++) {
+    const title = DAILY_INTERESTING_TITLES_DE[Math.abs((seed * (i + 3) * 17 + i * 97) % n)];
+    if (!picks.includes(title)) picks.push(title);
+  }
+  return picks;
+}
+
+async function fetchDeWikiSummaryByTitle(title) {
+  const url = `https://de.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
+  const res = await fetch(url, { headers: { Accept: 'application/json' } });
+  if (!res.ok) throw new Error(`Wikipedia title ${res.status}`);
+  return parseDeWikiSummary(await res.json(), 'Thema', 'wikipedia-topic');
+}
+
 async function fetchDeWikipediaSummary() {
   const res = await fetch('https://de.wikipedia.org/api/rest_v1/page/random/summary', {
     headers: { Accept: 'application/json' },
   });
   if (!res.ok) throw new Error(`Wikipedia ${res.status}`);
-  const data = await res.json();
-  const title = data.title || 'Wikipedia';
-  const extract = (data.extract || '').trim();
-  if (!extract || extract.length < 40) throw new Error('Empty extract');
-  // Keep first ~2 paragraphs / reasonable length for practice
-  let text = extract;
-  if (text.length > 420) {
-    text = text.slice(0, 420);
-    const cut = Math.max(text.lastIndexOf('。'), text.lastIndexOf('！'), text.lastIndexOf('？'));
-    if (cut > 120) text = text.slice(0, cut + 1);
-  }
-  return {
-    title: `Wikipedia · ${title}`,
-    description: 'Random German Wikipedia summary (open web)',
-    text,
-    source: 'wikipedia',
-    pageUrl: data.content_urls?.desktop?.page || data.content_urls?.mobile?.page || '',
-  };
+  return parseDeWikiSummary(await res.json(), 'Wikipedia', 'wikipedia');
+}
+
+async function fetchDeWikinewsSummary() {
+  const res = await fetch('https://de.wikinews.org/api/rest_v1/page/random/summary', {
+    headers: { Accept: 'application/json' },
+  });
+  if (!res.ok) throw new Error(`Wikinews ${res.status}`);
+  return parseDeWikiSummary(await res.json(), 'Nachrichten', 'wikinews');
 }
 
 /**
- * Today's reading for an CEFR level:
- * 1) localStorage cache for today+level
- * 2) try a few Wikipedia random summaries; keep best score
- * 3) fallback: seeded graded collection
+ * Today's reading — forceNew always generates another text when requested.
  */
-async function loadDailyReadingForLevel(level, vocab) {
+async function loadDailyReadingForLevel(level, vocab, opts = {}) {
+  const forceNew = !!opts.forceNew;
   const cefr = Number(level) || 1;
   const day = localDateKey();
   const cacheKey = `${day}|${cefr}`;
@@ -492,137 +644,223 @@ async function loadDailyReadingForLevel(level, vocab) {
   } catch {
     cache = {};
   }
-  // Drop other days
   for (const k of Object.keys(cache)) {
     if (!k.startsWith(day)) delete cache[k];
   }
 
-  if (cache[cacheKey] && cache[cacheKey].text) {
-    return { ...cache[cacheKey], fromCache: true };
-  }
+  const prev = cache[cacheKey] && cache[cacheKey].text ? cache[cacheKey] : null;
+  if (!forceNew && prev) return { ...prev, fromCache: true };
 
-  let best = null;
-  let bestScore = -1;
-  const attempts = cefr <= 2 ? 2 : 4; // lower rarely matches Wikipedia; fewer tries
+  const refreshCount = forceNew
+    ? Number(prev && prev.refreshCount || 0) + 1
+    : Number(prev && prev.refreshCount || 0);
+  const prevText = (prev && prev.text) || '';
+  const seenTitles = new Set(
+    Array.isArray(prev && prev.seenTitles) ? prev.seenTitles : []
+  );
 
-  for (let i = 0; i < attempts; i++) {
+  const candidates = [];
+  const tryPush = async (fetcher) => {
     try {
-      const item = await fetchDeWikipediaSummary();
-      const { score, matched, atOrBelow } = scoreTextForLevel(item.text, vocab, cefr);
-      // Prefer more known words and better coverage of ≤ level
-      const rank = matched >= 6 ? score * 10 + Math.min(matched, 30) * 0.01 : score;
-      if (rank > bestScore) {
-        bestScore = rank;
-        best = {
-          ...item,
-          level: cefr,
-          id: `daily-wiki-${day}-cefr${cefr}`,
-          levelScore: score,
-          matched,
-          atOrBelow,
-        };
-      }
-      // Good enough match for this level
-      if (matched >= 8 && score >= (cefr <= 3 ? 0.55 : 0.4)) break;
-    } catch {
-      // ignore single attempt
-    }
-    await new Promise((r) => setTimeout(r, 120));
+      const item = await fetcher();
+      const q = scoreReadingQuality(item.text, vocab, cefr);
+      let quality = q.rank;
+      if (prevText && item.text === prevText) quality -= 80;
+      if (item.rawTitle && seenTitles.has(item.rawTitle)) quality -= 25;
+      candidates.push({
+        ...item,
+        level: cefr,
+        levelScore: q.score,
+        matched: q.matched,
+        atOrBelow: q.atOrBelow,
+        quality,
+      });
+    } catch { /* ignore */ }
+  };
+
+  const titles = seededDailyTitlePicksDe(day, cefr, cefr <= 2 ? 4 : 6, refreshCount);
+  for (const title of titles) {
+    await tryPush(() => fetchDeWikiSummaryByTitle(title));
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  const newsTries = forceNew ? 3 : (cefr <= 2 ? 1 : 2);
+  for (let i = 0; i < newsTries; i++) {
+    await tryPush(() => fetchDeWikinewsSummary());
+    await new Promise((r) => setTimeout(r, 70));
+  }
+  const randomTries = forceNew ? 3 : (cefr <= 2 ? 1 : 2);
+  for (let i = 0; i < randomTries; i++) {
+    await tryPush(() => fetchDeWikipediaSummary());
+    await new Promise((r) => setTimeout(r, 70));
   }
 
-  // Only use Wikipedia if it has usable vocab for this level
-  if (best && best.matched >= 5 && best.levelScore >= 0.25) {
+  candidates.sort((a, b) => (b.quality || 0) - (a.quality || 0));
+  let best = null;
+  if (forceNew && prevText) {
+    best = candidates.find((c) => c.text !== prevText && c.matched >= 4 && c.levelScore >= 0.22)
+      || candidates.find((c) => c.text !== prevText && c.matched >= 3)
+      || candidates.find((c) => c.text !== prevText)
+      || null;
+  }
+  if (!best) {
+    best = candidates.find((c) => c.matched >= 4 && c.levelScore >= 0.22)
+      || candidates.find((c) => c.matched >= 3)
+      || candidates[0]
+      || null;
+  }
+
+  if (best) {
+    const expandLang = best.source === 'wikinews' ? 'de-news' : 'de';
+    best = await expandWikiReading(best, expandLang);
+    if (best.expanded) {
+      const q2 = scoreReadingQuality(best.text, vocab, cefr);
+      best.levelScore = q2.score;
+      best.matched = q2.matched;
+      best.atOrBelow = q2.atOrBelow;
+    }
+    const nextSeen = [...seenTitles];
+    if (best.rawTitle && !nextSeen.includes(best.rawTitle)) {
+      nextSeen.push(best.rawTitle);
+      if (nextSeen.length > 24) nextSeen.splice(0, nextSeen.length - 24);
+    }
     const result = {
-      id: best.id,
+      id: `daily-${best.source || 'web'}-${day}-cefr${cefr}-r${refreshCount}`,
       level: cefr,
       title: best.title,
-      description: `${best.description} · ~${Math.round(best.levelScore * 100)}% words ≤ ${levelLabel(cefr)}`,
+      description: `${best.description || 'web'} · ~${Math.round((best.levelScore || 0) * 100)}% ≤ ${levelLabel(cefr)}`,
       text: best.text,
-      source: 'wikipedia',
+      truncated: !!best.truncated,
+      fullLength: best.fullLength || (best.text || '').length,
+      source: best.source || 'web',
       pageUrl: best.pageUrl || '',
       day,
+      refreshCount,
+      rawTitle: best.rawTitle || '',
+      seenTitles: nextSeen,
     };
     cache[cacheKey] = result;
-    try {
-      localStorage.setItem(DAILY_READING_CACHE_KEY, JSON.stringify(cache));
-    } catch {}
-    return { ...result, fromCache: false };
+    try { localStorage.setItem(DAILY_READING_CACHE_KEY, JSON.stringify(cache)); } catch {}
+    return { ...result, fromCache: false, isNew: forceNew || !prev };
   }
 
-  // Fallback: graded collection seeded by date
+  const list = getReadingCollection().filter((r) => Number(r.level) === cefr);
   let seeded = null;
-  if (typeof getSeededDailyReading === 'function') {
-    seeded = getSeededDailyReading(cefr);
-  } else {
-    const list = getReadingCollection().filter((r) => Number(r.level) === cefr);
-    if (list.length) {
-      const seed = day.split('-').reduce((a, b) => a + Number(b), 0) + cefr * 17;
-      seeded = { ...list[seed % list.length], source: 'collection-daily' };
+  if (list.length) {
+    const seed = day.split('-').reduce((a, b) => a + Number(b), 0) + cefr * 17 + refreshCount * 3;
+    let pick = list[Math.abs(seed) % list.length];
+    if (forceNew && prevText && list.length > 1) {
+      const start = Math.abs(seed) % list.length;
+      for (let i = 0; i < list.length; i++) {
+        const cand = list[(start + i) % list.length];
+        if (cand.text !== prevText) { pick = cand; break; }
+      }
     }
+    seeded = { ...pick, source: 'collection-daily' };
+  } else if (typeof getSeededDailyReading === 'function') {
+    seeded = getSeededDailyReading(cefr);
   }
-
-  if (!seeded) {
-    throw new Error('No daily reading available for this level.');
-  }
+  if (!seeded) throw new Error('No daily reading available for this level.');
 
   const result = {
-    id: seeded.id || `daily-col-${day}-cefr${cefr}`,
+    id: (seeded.id || `daily-col-${day}-cefr${cefr}`) + `-r${refreshCount}`,
     level: cefr,
     title: seeded.title || `Heutige Lektüre ${levelLabel(cefr)}`,
-    description: (seeded.description || 'Graded collection') + ' · collection (web text too hard / unavailable)',
+    description: (seeded.description || 'Graded story') + ' · collection (web unavailable)',
     text: seeded.text,
     source: 'collection-daily',
     day,
+    refreshCount,
+    seenTitles: [...seenTitles],
   };
   cache[cacheKey] = result;
-  try {
-    localStorage.setItem(DAILY_READING_CACHE_KEY, JSON.stringify(cache));
-  } catch {}
-  return { ...result, fromCache: false };
+  try { localStorage.setItem(DAILY_READING_CACHE_KEY, JSON.stringify(cache)); } catch {}
+  return { ...result, fromCache: false, isNew: true };
 }
 
-function extractWordsFromCustomText(text, vocab, levels = []) {
+/**
+ * Extract known CEFR/user words + unknown tokens (not in library) for preview/Add.
+ */
+function extractWordsFromCustomText(text, vocab, levels = [], opts = {}) {
   if (!text || !vocab || !vocab.length) return [];
+  const includeUnknown = opts.includeUnknown !== false;
 
-  // Filter vocab by selected CEFR levels (empty = all)
-  let filteredVocab = vocab;
-  if (levels.length > 0) {
-    filteredVocab = vocab.filter(w => levels.includes(w.level));
+  const fullMap = new Map();
+  for (const w of vocab) {
+    if (w && w.word) {
+      const k = String(w.word).toLowerCase();
+      if (!fullMap.has(k)) fullMap.set(k, w);
+    }
   }
 
-  // Tokenize German text into words (letters including umlauts/ß)
-  const tokens = text.toLowerCase().match(/[a-zäöüß]+/gi) || [];
-  const tokenSet = new Set(tokens.map(t => t.toLowerCase()));
+  const levelSet = levels.length > 0 ? new Set(levels.map(Number)) : null;
+  const tokens = text.match(/[a-zäöüßA-ZÄÖÜ]+/g) || [];
   const lowerText = text.toLowerCase();
+  const tokenSet = new Set(tokens.map((t) => t.toLowerCase()));
 
   const matched = [];
+  const unknown = [];
   const seen = new Set();
 
-  // Sort vocab by word length descending so multi-word phrases match first
-  const sorted = [...filteredVocab].sort((a, b) => (b.word || '').length - (a.word || '').length);
-
+  // Multi-word phrases first against full library
+  const sorted = [...fullMap.values()].sort((a, b) => (b.word || '').length - (a.word || '').length);
   for (const entry of sorted) {
     const w = (entry.word || '').trim();
-    if (!w || seen.has(w.toLowerCase())) continue;
+    if (!w) continue;
     const key = w.toLowerCase();
+    if (seen.has(key)) continue;
+    let hit = false;
+    if (key.includes(' ')) hit = lowerText.includes(key);
+    else hit = tokenSet.has(key);
+    if (!hit) continue;
+    seen.add(key);
+    const lv = Number(entry.level) || 0;
+    if (!levelSet || levelSet.has(lv) || entry.userAdded) {
+      matched.push({ ...entry, unknown: false, notInLibrary: false });
+    }
+  }
 
-    if (key.includes(' ')) {
-      if (lowerText.includes(key)) {
-        seen.add(key);
-        matched.push(entry);
-      }
-    } else if (tokenSet.has(key)) {
+  if (includeUnknown) {
+    for (const tok of tokens) {
+      const key = tok.toLowerCase();
+      if (seen.has(key)) continue;
+      if (key.length < 2) continue; // skip tiny fragments
+      // Skip pure numbers / already-known via case
+      if (fullMap.has(key)) continue;
       seen.add(key);
-      matched.push(entry);
+      unknown.push({
+        word: tok,
+        article: '',
+        meaning: '',
+        level: 0,
+        unknown: true,
+        notInLibrary: true,
+      });
     }
   }
 
   matched.sort((a, b) => {
     if (a.level !== b.level) return a.level - b.level;
-    return a.word.localeCompare(b.word, 'de');
+    return String(a.word).localeCompare(String(b.word), 'de');
   });
+  unknown.sort((a, b) => String(a.word).localeCompare(String(b.word), 'de'));
+  return matched.concat(unknown);
+}
 
-  return matched;
+function isIncompleteLibraryWord(w) {
+  if (!w) return true;
+  if (w.unknown || w.notInLibrary) return true;
+  if (!(w.meaning || '').trim()) return true;
+  return false;
+}
+
+function patchCustomWordEntry(wordKey, fields) {
+  if (!Array.isArray(customWords) || !customWords.length) return;
+  const key = String(wordKey || '').trim().toLowerCase();
+  customWords = customWords.map((w) => (
+    w && String(w.word || '').toLowerCase() === key
+      ? { ...w, ...fields, unknown: false, notInLibrary: false }
+      : w
+  ));
 }
 
 function loadHighScore() {
@@ -1149,7 +1387,63 @@ function renderImageSearchResults(candidates, { onSelect } = {}) {
   });
 }
 
-/** Open modal to change picture for a word (writes to shared library). onDone() after change. */
+/**
+ * Persist English meaning (+ optional article) from the image modal.
+ */
+async function saveMeaningFromModal(word, meaningInputValue, articleInputValue) {
+  const newMeaning = String(meaningInputValue || '').trim();
+  if (!word || !word.word) return { ok: false, reason: 'Missing word.' };
+  if (!newMeaning) return { ok: false, reason: 'Meaning cannot be empty.' };
+  let art = String(articleInputValue != null ? articleInputValue : (word.article || '')).trim().toLowerCase();
+  if (art && !['der', 'die', 'das'].includes(art)) art = '';
+  const level = word.level || 3;
+  const wasIncomplete = isIncompleteLibraryWord(word) || !findWordInLibrary(word.word);
+
+  if (wasIncomplete && !findWordInLibrary(word.word)) {
+    const added = addUserWord({
+      word: word.word,
+      article: art,
+      meaning: newMeaning,
+      level,
+    });
+    if (!added.ok && !added.existing) {
+      return { ok: false, reason: added.reason || 'Could not add word.' };
+    }
+    word.article = art;
+    word.meaning = newMeaning;
+    word.level = level;
+    word.unknown = false;
+    word.notInLibrary = false;
+    word.userAdded = true;
+    patchCustomWordEntry(word.word, {
+      article: art,
+      meaning: newMeaning,
+      level,
+      userAdded: true,
+    });
+    return { ok: true, shared: 'local-library', word };
+  }
+
+  if (newMeaning === String(word.meaning || '').trim()) {
+    return { ok: true, shared: 'unchanged', word };
+  }
+  const result = await updateWordMeaning(word.word, newMeaning, { article: art, level });
+  if (result.ok) {
+    word.meaning = newMeaning;
+    if (art) word.article = art;
+    word.unknown = false;
+    word.notInLibrary = false;
+    patchCustomWordEntry(word.word, {
+      article: word.article,
+      meaning: word.meaning,
+      unknown: false,
+      notInLibrary: false,
+    });
+  }
+  return result;
+}
+
+/** Open modal to change picture + meaning for a word. onDone() after change. */
 function openImageEditModal(word, onDone) {
   const modal = document.getElementById('image-edit-modal');
   if (!modal || !word) return;
@@ -1158,6 +1452,8 @@ function openImageEditModal(word, onDone) {
   const metaEl = document.getElementById('image-edit-meta');
   const previewEl = document.getElementById('image-edit-preview');
   const urlInput = document.getElementById('image-edit-url');
+  const meaningInput = document.getElementById('image-edit-meaning');
+  const articleInput = document.getElementById('image-edit-article');
   const queryInput = document.getElementById('image-edit-query');
   const statusEl = document.getElementById('image-edit-status');
   const sharedHint = document.getElementById('image-edit-shared-hint');
@@ -1167,24 +1463,31 @@ function openImageEditModal(word, onDone) {
   const imgInfo = getWordImage(word);
   const lib = sharedLibrary();
   const inShared = !!(lib && lib.has(word.word));
+  const meaning = (word.meaning || '').replace(/;/g, '; ').trim();
+  const incomplete = isIncompleteLibraryWord(word);
 
   if (wordEl) wordEl.textContent = word.word || '';
   if (metaEl) {
-    const meaning = (word.meaning || '').replace(/;/g, '; ').trim();
-    const srcNote = inShared
-      ? ' · shared library'
-      : imgInfo.source === 'builtin'
-        ? ' · built-in map'
-        : imgInfo.url
-          ? ' · online'
-          : '';
-    metaEl.textContent = `${word.article || '—'} · ${meaning || 'no meaning'}${srcNote}`;
+    const srcNote = incomplete
+      ? ' · not in library — add meaning'
+      : inShared
+        ? ' · shared library'
+        : imgInfo.source === 'builtin'
+          ? ' · built-in map'
+          : imgInfo.url
+            ? ' · online'
+            : '';
+    metaEl.textContent = `${word.article || '—'}${srcNote}`;
   }
+  if (meaningInput) meaningInput.value = meaning;
+  if (articleInput) articleInput.value = word.article || '';
   if (urlInput) {
     urlInput.value = (imgInfo.url && imgInfo.source === 'shared') ? imgInfo.url : (imgInfo.url || '');
   }
   if (queryInput) {
-    queryInput.value = defaultSearchQuery(word);
+    queryInput.value = meaning
+      ? String(meaning).split(/[;/,]/)[0].trim().slice(0, 80)
+      : defaultSearchQuery(word);
   }
   if (statusEl) statusEl.textContent = '';
   if (resultsEl) {
@@ -1197,8 +1500,8 @@ function openImageEditModal(word, onDone) {
   }
   if (sharedHint) {
     sharedHint.textContent = sharedLibraryEnabled()
-      ? 'Edits are saved to the shared library for everyone and keep working after site updates.'
-      : 'Shared library is not configured — set config.js (Supabase) so all users can share image edits.';
+      ? 'Save updates picture (shared) and meaning (local; shared when possible).'
+      : 'Meaning saves locally. Configure Supabase in config.js to share pictures.';
     sharedHint.classList.toggle('image-edit-shared-hint--warn', !sharedLibraryEnabled());
   }
   updateImageSourceChipAvailability();
@@ -1310,23 +1613,38 @@ function openImageEditModal(word, onDone) {
       runAction(async (st) => {
         const w = modal._editWord;
         const url = (document.getElementById('image-edit-url')?.value || '').trim();
+        const meaningVal = document.getElementById('image-edit-meaning')?.value || '';
+        const articleVal = document.getElementById('image-edit-article')?.value || '';
         if (!w) return;
-        if (!url) {
-          if (st) st.textContent = 'Paste an https:// image URL, or pick a search result, or use “No image”.';
+
+        const meaningResult = await saveMeaningFromModal(w, meaningVal, articleVal);
+        if (!meaningResult.ok) {
+          if (st) st.textContent = meaningResult.reason || 'Could not save meaning.';
           return;
         }
-        const cand = modal._selectedCandidate;
-        await setImageOverride(w.word, url, {
-          article: w.article,
-          meaning: w.meaning,
-          source: cand?.source || undefined,
-          credit: cand?.credit || undefined,
-        });
-        if (w.word) currentImageMap[w.word] = url;
-        if (st) st.textContent = 'Saved to shared library for all users.';
-        if (typeof modal._showPreview === 'function') modal._showPreview(url);
+
+        let imageNote = '';
+        if (url) {
+          const cand = modal._selectedCandidate;
+          try {
+            await setImageOverride(w.word, url, {
+              article: w.article,
+              meaning: w.meaning,
+              source: cand?.source || undefined,
+              credit: cand?.credit || undefined,
+            });
+            if (w.word) currentImageMap[w.word] = url;
+            imageNote = 'Picture saved to shared library.';
+            if (typeof modal._showPreview === 'function') modal._showPreview(url);
+          } catch (err) {
+            imageNote = `Meaning saved; picture not saved (${err.message || err}).`;
+          }
+        } else {
+          imageNote = 'Meaning saved. Add a photo URL or Search, or use “No image”.';
+        }
+        if (st) st.textContent = imageNote;
         if (typeof modal._onDone === 'function') modal._onDone();
-        setTimeout(close, 500);
+        if (url && imageNote.indexOf('not saved') === -1) setTimeout(close, 550);
       });
     });
 
@@ -1630,10 +1948,10 @@ function filterWordsBySelection(words) {
   return words.filter(w => !unselectedWords.has(w.word));
 }
 
-/** Active words from custom extract mode (respects uncheck in the word list). */
+/** Active playable words (respects uncheck; skips incomplete/unknown). */
 function getActiveExtractedWords() {
   if (!customWords || customWords.length === 0) return [];
-  return filterWordsBySelection(customWords);
+  return filterWordsBySelection(customWords).filter((w) => !isIncompleteLibraryWord(w));
 }
 
 /** Hide the selectable word list (used in sets mode until Preview is pressed). */
@@ -1642,6 +1960,13 @@ function hideWordSelectionList() {
   if (listEl) {
     listEl.hidden = true;
     listEl.innerHTML = '';
+  }
+  const playBar = document.getElementById('play-bar');
+  if (playBar) {
+    playBar.classList.remove('play-bar--ready');
+    const practicePanel = document.getElementById('practice-panel');
+    const panelOpen = practicePanel && practicePanel.style.display !== 'none';
+    playBar.hidden = !panelOpen;
   }
 }
 
@@ -1990,7 +2315,8 @@ function startGame() {
     } else {
       msg = `This set only has ${currentSetWords.length} words. Pick another set or CEFR level.`;
     }
-    alert(msg);
+    if (typeof showAppToast === 'function') showAppToast(msg, 4200);
+    else alert(msg);
     return;
   }
 
@@ -2014,6 +2340,7 @@ function startGame() {
   }
   const preview = document.getElementById('picture-preview');
   if (preview) preview.hidden = true;
+  const __pb = document.getElementById('play-bar'); if (__pb) __pb.hidden = true;
   document.getElementById('picture-game-screen').hidden = false;
   document.getElementById('picture-gameover').hidden = true;
 
@@ -2436,16 +2763,71 @@ function initPictureGame(vocabulary) {
   function wordListImageControls(w) {
     const img = getWordImage(w);
     const wordAttr = String(w.word || '').replace(/"/g, '&quot;');
+    const incomplete = isIncompleteLibraryWord(w);
     const thumb = img.url
       ? `<img class="word-list-thumb" src="${img.url}" alt="" loading="lazy" onerror="this.style.display='none'">`
       : `<span class="word-list-thumb word-list-thumb--empty" title="No picture">—</span>`;
-    const badge = img.source === 'shared'
-      ? (img.url ? 'shared' : 'hidden')
-      : (img.url ? '' : 'none');
+    const badge = incomplete
+      ? 'new'
+      : img.source === 'shared'
+        ? (img.url ? 'shared' : 'hidden')
+        : (img.url ? '' : 'none');
     const badgeHtml = badge
-      ? `<span class="img-badge img-badge--${badge}">${badge === 'hidden' ? 'no img' : badge}</span>`
+      ? `<span class="img-badge img-badge--${badge}">${badge === 'hidden' ? 'no img' : badge === 'new' ? 'not in library' : badge}</span>`
       : '';
-    return `${thumb}${badgeHtml}<button type="button" class="img-edit-btn" data-word="${wordAttr}" title="Edit shared picture">Image</button>`;
+    const addBtn = incomplete
+      ? `<button type="button" class="add-unknown-btn" data-word="${wordAttr}" title="Add article & meaning to library">Add</button>`
+      : '';
+    return `${thumb}${badgeHtml}${addBtn}<button type="button" class="img-edit-btn" data-word="${wordAttr}" title="Edit picture & meaning">Image</button>`;
+  }
+
+  function addUnknownWordFromList(wordStr, onRefresh) {
+    const key = (wordStr || '').trim();
+    if (!key) return;
+    const existing = findWordInLibrary(key);
+    if (existing && !isIncompleteLibraryWord(existing)) {
+      if (typeof onRefresh === 'function') onRefresh();
+      return;
+    }
+    const article = window.prompt(`Article for “${key}” (der/die/das or empty):`, existing?.article || '');
+    if (article === null) return;
+    const meaning = window.prompt(`English meaning for “${key}”:`, existing?.meaning || '');
+    if (meaning === null) return;
+    if (!String(meaning).trim()) {
+      if (typeof showAppToast === 'function') showAppToast('Meaning is required.');
+      else alert('Meaning is required.');
+      return;
+    }
+    const level = Number(document.getElementById('reading-cefr-level')?.value) || 3;
+    let art = String(article || '').trim().toLowerCase();
+    if (art && !['der', 'die', 'das'].includes(art)) art = '';
+    const result = addUserWord({
+      word: key,
+      article: art,
+      meaning: String(meaning).trim(),
+      level,
+    });
+    if (!result.ok) {
+      if (result.existing) {
+        updateWordMeaning(key, String(meaning).trim(), { article: art || result.existing.article, level: result.existing.level || level })
+          .then(() => {
+            patchCustomWordEntry(key, {
+              article: art || result.existing.article,
+              meaning: String(meaning).trim(),
+              level: result.existing.level || level,
+              unknown: false,
+              notInLibrary: false,
+            });
+            if (typeof onRefresh === 'function') onRefresh();
+          });
+        return;
+      }
+      if (typeof showAppToast === 'function') showAppToast(result.reason || 'Could not add word.');
+      else alert(result.reason || 'Could not add word.');
+      return;
+    }
+    patchCustomWordEntry(key, { ...result.word, unknown: false, notInLibrary: false, userAdded: true });
+    if (typeof onRefresh === 'function') onRefresh();
   }
 
   function bindWordListImageEditors(listEl, words, onRefresh) {
@@ -2456,10 +2838,36 @@ function initPictureGame(vocabulary) {
         const wordStr = btn.dataset.word;
         const word = (words || []).find((w) => w.word === wordStr)
           || pictureVocabulary.find((w) => w.word === wordStr)
-          || { word: wordStr, article: '', meaning: '' };
+          || { word: wordStr, article: '', meaning: '', unknown: true, notInLibrary: true };
         openImageEditModal(word, onRefresh);
       });
     });
+    listEl.querySelectorAll('.add-unknown-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        addUnknownWordFromList(btn.dataset.word, onRefresh);
+      });
+    });
+  }
+
+  function formatWordListRow(w) {
+    const incomplete = isIncompleteLibraryWord(w);
+    const meaning = incomplete
+      ? '<em class="meaning-missing">not in library — tap Add</em>'
+      : (w.meaning || '').replace(/;/g, '; ').trim();
+    const levelInfo = !incomplete && w.level ? ` [${levelLabel(w.level)}]` : '';
+    const isChecked = !unselectedWords.has(w.word);
+    const rowClass = incomplete ? 'word-list-item word-list-item--unknown' : 'word-list-item';
+    return `<li class="${rowClass}">
+      <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1; min-width:0;">
+        <input type="checkbox" ${isChecked ? 'checked' : ''} data-word="${w.word}" style="margin:0;">
+        <span class="de-word">${w.word}</span>
+        <span class="de-article">(${w.article || (incomplete ? '?' : '')})</span>
+        <span class="meaning">— ${meaning}${levelInfo}</span>
+      </label>
+      <div class="word-list-img-actions">${wordListImageControls(w)}</div>
+    </li>`;
   }
 
   // Helper to show a selectable words list (checkboxes) before playing
@@ -2468,26 +2876,17 @@ function initPictureGame(vocabulary) {
     if (!listEl || !words || !words.length) return;
 
     const isCustom = !!(customWords && customWords.length > 0);
-    const itemsHtml = words.map(w => {
-      const meaning = (w.meaning || '').replace(/;/g, '; ').trim();
-      const levelInfo = w.level ? ` [${levelLabel(w.level)}]` : '';
-      const isChecked = !unselectedWords.has(w.word);
-      return `<li class="word-list-item">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1; min-width:0;">
-          <input type="checkbox" ${isChecked ? 'checked' : ''} data-word="${w.word}" style="margin:0;">
-          <span class="de-word">${w.word}</span>
-          <span class="de-article">(${w.article || ''})</span>
-          <span class="meaning">— ${meaning}${levelInfo}</span>
-        </label>
-        <div class="word-list-img-actions">${wordListImageControls(w)}</div>
-      </li>`;
-    }).join('');
+    const unknownCount = words.filter(isIncompleteLibraryWord).length;
+    const itemsHtml = words.map((w) => formatWordListRow(w)).join('');
 
     const title = isCustom
       ? 'Extracted words (uncheck to exclude from games)'
       : 'Words in this set (uncheck to exclude from games)';
+    const unknownHint = unknownCount
+      ? ` <strong>${unknownCount}</strong> not in library — use <em>Add</em>.`
+      : '';
     listEl.innerHTML = `<strong>${title} (${words.length}):</strong>
-      <p class="word-list-img-hint">Use <em>Image</em> if a picture is wrong or missing.</p>
+      <p class="word-list-img-hint">Fix pictures/meanings with <em>Image</em>.${unknownHint}</p>
       <ul>${itemsHtml}</ul>`;
     listEl.hidden = false;
 
@@ -2498,6 +2897,7 @@ function initPictureGame(vocabulary) {
         if (group && group.length) showBasicWordsList(group);
       }
       if (gameActive) updateBoard(true);
+      updatePlayBarVisibility();
     };
 
     const cbs = listEl.querySelectorAll('input[type="checkbox"]');
@@ -2513,6 +2913,7 @@ function initPictureGame(vocabulary) {
       });
     });
     bindWordListImageEditors(listEl, words, refresh);
+    updatePlayBarVisibility();
   }
 
 
@@ -2589,8 +2990,7 @@ function initPictureGame(vocabulary) {
     const gameOver = document.getElementById('picture-gameover');
     if (gameScreen) gameScreen.hidden = true;
     if (gameOver) gameOver.hidden = true;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = 'none';
+    updatePlayBarVisibility();
   }
 
   function setAddWordStatus(msg, isError = false) {
@@ -2650,8 +3050,7 @@ function initPictureGame(vocabulary) {
     if (savedSetsFlow) savedSetsFlow.style.display = 'none';
     if (practicePanel) practicePanel.style.display = 'none';
     if (addWordsFlow) addWordsFlow.style.display = '';
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = 'none';
+    updatePlayBarVisibility();
     const gameScreen = document.getElementById('picture-game-screen');
     const gameOver = document.getElementById('picture-gameover');
     if (gameScreen) gameScreen.hidden = true;
@@ -2665,14 +3064,26 @@ function initPictureGame(vocabulary) {
   function updateSaveSetButton() {
     const hasText = !!getActiveReadingText();
     const hasWords = !!(customWords && customWords.length > 0);
-    const saveReadingBtn = document.getElementById('save-reading-btn');
-    const saveWordsBtn = document.getElementById('save-word-set-btn');
-    const saveBothBtn = document.getElementById('save-reading-and-words-btn');
+    const saveLocalBtn = document.getElementById('save-local-btn');
     const shareBtn = document.getElementById('share-reading-words-btn');
-    if (saveReadingBtn) saveReadingBtn.style.display = hasText ? 'inline-block' : 'none';
-    if (saveWordsBtn) saveWordsBtn.style.display = hasWords ? 'inline-block' : 'none';
-    if (saveBothBtn) saveBothBtn.style.display = (hasText && hasWords) ? 'inline-block' : 'none';
+    if (saveLocalBtn) saveLocalBtn.style.display = (hasText || hasWords) ? 'inline-block' : 'none';
     if (shareBtn) shareBtn.style.display = (hasText && hasWords) ? 'inline-block' : 'none';
+    updatePlayBarVisibility();
+  }
+
+  function updatePlayBarVisibility() {
+    const playBar = document.getElementById('play-bar');
+    const practicePanel = document.getElementById('practice-panel');
+    if (!playBar) return;
+    const panelOpen = practicePanel && practicePanel.style.display !== 'none';
+    const gameScreen = document.getElementById('picture-game-screen');
+    const inGame = gameScreen && !gameScreen.hidden;
+    const listEl = document.getElementById('extracted-words-list');
+    const hasList = !!(listEl && !listEl.hidden && listEl.querySelector('li'));
+    const wordsReady = hasList || (getActiveExtractedWords().length > 0);
+    const show = !!(panelOpen && wordsReady && !inGame);
+    playBar.classList.toggle('play-bar--ready', show);
+    playBar.hidden = !show;
   }
 
   function setSavedLibTab(tab) {
@@ -2895,8 +3306,7 @@ function initPictureGame(vocabulary) {
     updateSaveSetButton();
     const listSection = document.getElementById('words-list-section');
     if (listSection) listSection.hidden = false;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = '';
+    updatePlayBarVisibility();
   }
 
   function loadSavedSetIntoPractice(set) {
@@ -2937,8 +3347,7 @@ function initPictureGame(vocabulary) {
 
     const listSection = document.getElementById('words-list-section');
     if (listSection) listSection.hidden = false;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = '';
+    updatePlayBarVisibility();
   }
 
   function showSavedSets() {
@@ -2948,8 +3357,7 @@ function initPictureGame(vocabulary) {
     if (addWordsFlow) addWordsFlow.style.display = 'none';
     if (practicePanel) practicePanel.style.display = 'none';
     if (savedSetsFlow) savedSetsFlow.style.display = '';
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = 'none';
+    updatePlayBarVisibility();
     const gameScreen = document.getElementById('picture-game-screen');
     const gameOver = document.getElementById('picture-gameover');
     if (gameScreen) gameScreen.hidden = true;
@@ -2979,8 +3387,7 @@ function initPictureGame(vocabulary) {
     }
     const listSection = document.getElementById('words-list-section');
     if (listSection) listSection.hidden = false;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = '';
+    updatePlayBarVisibility();
 
     // Ensure only custom cefr are active
     document.querySelectorAll('#sets-flow .level-filters input[type="checkbox"], .sets-cefr-filters input').forEach(c => c.checked = false);
@@ -3018,8 +3425,7 @@ function initPictureGame(vocabulary) {
     if (reading) reading.style.display = 'none';  // hide paste + custom cefr (sets has its own in HTML)
     const listSection = document.getElementById('words-list-section');
     if (listSection) listSection.hidden = false;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = '';
+    updatePlayBarVisibility();
 
     // Ensure only sets cefr are active (uncheck custom ones)
     document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]').forEach(c => c.checked = false);
@@ -3188,8 +3594,7 @@ function initPictureGame(vocabulary) {
   if (menuView) {
     const listEl = document.getElementById('extracted-words-list');
     if (listEl) listEl.hidden = true;
-    const hint = document.querySelector('.picture-highscore-hint');
-    if (hint) hint.style.display = 'none';
+    updatePlayBarVisibility();
     // Show menu by default
     showMenu();
   }
@@ -3231,31 +3636,26 @@ function initPictureGame(vocabulary) {
     if (!words || words.length === 0) {
       listEl.hidden = true;
       listEl.innerHTML = '';
+      updatePlayBarVisibility();
       return;
     }
-    const items = words.map(w => {
-      const meaning = (w.meaning || '').replace(/;/g, '; ').trim();
-      const levelInfo = w.level ? ` [${levelLabel(w.level)}]` : '';
-      const isChecked = !unselectedWords.has(w.word);
-      return `<li class="word-list-item">
-        <label style="display:flex; align-items:center; gap:6px; cursor:pointer; flex:1; min-width:0;">
-          <input type="checkbox" ${isChecked ? 'checked' : ''} data-word="${w.word}" style="margin:0;">
-          <span class="de-word">${w.word}</span>
-          <span class="de-article">(${w.article || ''})</span>
-          <span class="meaning">— ${meaning}${levelInfo}</span>
-        </label>
-        <div class="word-list-img-actions">${wordListImageControls(w)}</div>
-      </li>`;
-    }).join('');
-    listEl.innerHTML = `<strong>Extracted words (${words.length}) — uncheck to exclude from games:</strong>
-      <p class="word-list-img-hint">Use <em>Image</em> if a picture is wrong or missing.</p>
+    const unknownCount = words.filter(isIncompleteLibraryWord).length;
+    const playable = words.filter((w) => !isIncompleteLibraryWord(w)).length;
+    const items = words.map((w) => formatWordListRow(w)).join('');
+    const unknownHint = unknownCount
+      ? ` · <strong>${unknownCount}</strong> not in library (Add before they can be played)`
+      : '';
+    listEl.innerHTML = `<strong>Extracted words (${words.length}; ${playable} playable)${unknownHint}</strong>
+      <p class="word-list-img-hint">Use <em>Add</em> for new words, <em>Image</em> to fix pictures &amp; meanings.</p>
       <ul>${items}</ul>`;
     listEl.hidden = false;
+    updatePlayBarVisibility();
 
     const refresh = () => {
       updatePictureSetOptions();
       if (customWords && customWords.length) renderExtractedList(customWords);
       if (gameActive) updateBoard(true);
+      updatePlayBarVisibility();
     };
 
     const checkboxes = listEl.querySelectorAll('input[type="checkbox"]');
@@ -3291,19 +3691,25 @@ function initPictureGame(vocabulary) {
       }
 
       const selectedLevels = getSelectedLevels();
-      customWords = extractWordsFromCustomText(text, pictureVocabulary, selectedLevels);
+      customWords = extractWordsFromCustomText(text, pictureVocabulary, selectedLevels, {
+        includeUnknown: true,
+      });
       unselectedWords = new Set();
       currentImageMap = {};
 
       const levelDesc = selectedLevels.length === 0
         ? 'all levels'
         : selectedLevels.sort((a, b) => a - b).map(levelLabel).join(', ');
+      const unknownN = customWords.filter(isIncompleteLibraryWord).length;
+      const knownN = customWords.length - unknownN;
 
       if (infoEl) {
         if (customWords.length === 0) {
-          infoEl.innerHTML = `No matching words found in the text for ${levelDesc}. Try more CEFR levels or another reading.`;
+          infoEl.innerHTML = `No German words found for ${levelDesc}. Try more CEFR levels or another reading.`;
+        } else if (unknownN > 0) {
+          infoEl.innerHTML = `✅ <strong>${knownN}</strong> known + <strong>${unknownN}</strong> not in library (${levelDesc}). Tap <em>Add</em> on new words, then play.`;
         } else {
-          infoEl.innerHTML = `✅ Extracted <strong>${customWords.length}</strong> words for ${levelDesc}. You can save this set or start the game.`;
+          infoEl.innerHTML = `✅ Extracted <strong>${customWords.length}</strong> words for ${levelDesc}. Fix pictures if needed, then play.`;
         }
       }
 
@@ -3343,94 +3749,63 @@ function initPictureGame(vocabulary) {
     });
   }
 
-  // ---- Save reading / word set (local) + share to shared library ----
+  // ---- Smart local Save + share ----
   function promptReadingTitle(defaultTitle) {
     const name = window.prompt('Title for this reading:', defaultTitle || 'My reading');
     if (name === null) return null;
     return name.trim() || defaultTitle || 'My reading';
   }
 
-  const saveReadingBtn = document.getElementById('save-reading-btn');
-  if (saveReadingBtn) {
-    saveReadingBtn.addEventListener('click', () => {
-      const snap = getCurrentReadingSnapshot();
-      if (!snap.text) {
-        if (infoEl) infoEl.textContent = 'Load or paste a reading first.';
-        return;
-      }
-      const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
-      if (title === null) return;
-      try {
-        const entry = addSavedReading({ ...snap, title });
-        if (infoEl) {
-          infoEl.innerHTML = `📖 Saved reading “${String(entry.title).replace(/</g, '&lt;')}” in this browser. Open <em>My saved library</em> anytime.`;
-        }
-        updateSaveSetButton();
-      } catch (err) {
-        if (infoEl) infoEl.textContent = err.message || String(err);
-      }
-    });
-  }
-
-  const saveSetBtn = document.getElementById('save-word-set-btn');
-  if (saveSetBtn) {
-    saveSetBtn.addEventListener('click', () => {
-      const words = getActiveExtractedWords().length
-        ? getActiveExtractedWords()
-        : (customWords || []);
-      if (!words.length) {
-        if (infoEl) infoEl.textContent = 'Extract words first, then save a set.';
-        return;
-      }
-      const titleEl = document.getElementById('lesson-reading-title');
-      const defaultName = (titleEl && titleEl.textContent && titleEl.textContent !== 'Reading')
-        ? `${titleEl.textContent} · words`
-        : `Practice set ${new Date().toLocaleDateString()}`;
-      const name = window.prompt('Name for this word set:', defaultName);
-      if (name === null) return;
-      try {
-        const entry = addSavedWordSet({
-          name: name.trim() || defaultName,
-          words,
-          source: 'reading',
-          readingTitle: titleEl?.textContent || '',
-        });
-        if (infoEl) {
-          infoEl.innerHTML = `💾 Saved <strong>${entry.words.length}</strong> words as “${String(entry.name).replace(/</g, '&lt;')}”. Open <em>My saved library</em> from the menu anytime.`;
-        }
-      } catch (err) {
-        if (infoEl) infoEl.textContent = err.message || String(err);
-      }
-    });
-  }
-
-  const saveBothBtn = document.getElementById('save-reading-and-words-btn');
-  if (saveBothBtn) {
-    saveBothBtn.addEventListener('click', () => {
+  const saveLocalBtn = document.getElementById('save-local-btn');
+  if (saveLocalBtn) {
+    saveLocalBtn.addEventListener('click', () => {
       const snap = getCurrentReadingSnapshot();
       const words = getActiveExtractedWords().length
         ? getActiveExtractedWords()
-        : (customWords || []);
-      if (!snap.text) {
-        if (infoEl) infoEl.textContent = 'Load or paste a reading first.';
+        : (customWords || []).filter((w) => !isIncompleteLibraryWord(w));
+      const hasText = !!(snap.text && snap.text.trim());
+      const hasWords = !!(words && words.length);
+      if (!hasText && !hasWords) {
+        if (infoEl) infoEl.textContent = 'Load a reading or extract words first.';
         return;
       }
-      if (!words.length) {
-        if (infoEl) infoEl.textContent = 'Extract words first.';
-        return;
-      }
-      const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
-      if (title === null) return;
       try {
-        const reading = addSavedReading({ ...snap, title });
-        const set = addSavedWordSet({
-          name: `${title} · words`,
-          words,
-          source: 'reading',
-          readingTitle: title,
-        });
-        if (infoEl) {
-          infoEl.innerHTML = `✅ Saved reading “${String(reading.title).replace(/</g, '&lt;')}” and word set (${set.words.length} words) in this browser.`;
+        if (hasText && hasWords) {
+          const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
+          if (title === null) return;
+          const reading = addSavedReading({ ...snap, title });
+          const set = addSavedWordSet({
+            name: `${title} · words`,
+            words,
+            source: 'reading',
+            readingTitle: title,
+          });
+          if (infoEl) {
+            infoEl.innerHTML = `✅ Saved reading “${String(reading.title).replace(/</g, '&lt;')}” and ${set.words.length} words locally.`;
+          }
+        } else if (hasText) {
+          const title = promptReadingTitle(snap.title || `Reading ${new Date().toLocaleDateString()}`);
+          if (title === null) return;
+          const entry = addSavedReading({ ...snap, title });
+          if (infoEl) {
+            infoEl.innerHTML = `📖 Saved reading “${String(entry.title).replace(/</g, '&lt;')}” locally.`;
+          }
+        } else {
+          const titleEl = document.getElementById('lesson-reading-title');
+          const defaultName = (titleEl && titleEl.textContent && titleEl.textContent !== 'Reading')
+            ? `${titleEl.textContent} · words`
+            : `Practice set ${new Date().toLocaleDateString()}`;
+          const name = window.prompt('Name for this word set:', defaultName);
+          if (name === null) return;
+          const entry = addSavedWordSet({
+            name: name.trim() || defaultName,
+            words,
+            source: 'reading',
+            readingTitle: titleEl?.textContent || '',
+          });
+          if (infoEl) {
+            infoEl.innerHTML = `💾 Saved <strong>${entry.words.length}</strong> words as “${String(entry.name).replace(/</g, '&lt;')}”.`;
+          }
         }
         updateSaveSetButton();
       } catch (err) {
@@ -3582,10 +3957,12 @@ function initPictureGame(vocabulary) {
       const level = Number(document.getElementById('reading-cefr-level')?.value) || 3;
       const statusEl = document.getElementById('daily-reading-status');
       loadDailyBtn.disabled = true;
-      if (statusEl) statusEl.textContent = 'Loading today’s reading…';
+      const label = loadDailyBtn.textContent;
+      loadDailyBtn.textContent = 'Loading…';
+      if (statusEl) statusEl.textContent = 'Finding a new reading…';
       if (infoEl) infoEl.textContent = '';
       try {
-        const reading = await loadDailyReadingForLevel(level, pictureVocabulary);
+        const reading = await loadDailyReadingForLevel(level, pictureVocabulary, { forceNew: true });
         applyReadingToUi(reading);
         customWords = [];
         unselectedWords = new Set();
@@ -3593,26 +3970,35 @@ function initPictureGame(vocabulary) {
           listEl.hidden = true;
           listEl.innerHTML = '';
         }
-        const srcNote = reading.source === 'wikipedia'
-          ? 'from the open web (German Wikipedia)'
-          : 'from the graded collection (web text unavailable or too hard for this level)';
-        const cacheNote = reading.fromCache ? ' · cached for today' : '';
+        const srcNote =
+          reading.source === 'wikipedia-topic' ? 'topic story'
+            : reading.source === 'wikinews' ? 'news'
+              : reading.source === 'wikipedia' ? 'encyclopedia'
+                : 'collection story';
+        const n = Number(reading.refreshCount || 1);
+        const lenNote = readingLengthNote(reading);
         if (statusEl) {
-          statusEl.innerHTML = `✅ ${srcNote}${cacheNote}. Same text all day for ${levelLabel(level)}.`;
+          statusEl.innerHTML = `✅ New ${srcNote} for ${levelLabel(level)}${n > 1 ? ` · #${n} today` : ''}. Click again for another.`
+            + (lenNote ? `<br><span class="reading-length-note">${lenNote}</span>` : '');
         }
         if (infoEl) {
-          infoEl.innerHTML = `Loaded <strong>${String(reading.title).replace(/</g, '&lt;')}</strong>. Click <em>Extract words</em> to practice.`;
+          infoEl.innerHTML = `Loaded <strong>${String(reading.title).replace(/</g, '&lt;')}</strong> (${(reading.text || '').length} chars). Extract words — or click <em>New reading</em> again.`
+            + (reading.truncated
+              ? `<br><span class="reading-length-note">⚠ ${lenNote}</span>`
+              : '');
         }
         updateCustomClearButton();
+        updateSaveSetButton();
       } catch (err) {
         if (statusEl) statusEl.textContent = err.message || 'Could not load daily reading.';
       } finally {
         loadDailyBtn.disabled = false;
+        loadDailyBtn.textContent = label || 'New reading';
       }
     });
   }
 
-  // Keep active editor in sync when user types in paste tab
+  // Paste tab: single clean surface
   const pasteTaSync = document.getElementById('custom-reading-text');
   if (pasteTaSync) {
     pasteTaSync.addEventListener('input', () => {
@@ -3620,17 +4006,10 @@ function initPictureGame(vocabulary) {
       const box = document.getElementById('lesson-reading');
       if (activeTa) {
         activeTa.value = pasteTaSync.value;
-        activeTa.hidden = !pasteTaSync.value.trim();
+        activeTa.hidden = true;
       }
-      if (box && pasteTaSync.value.trim()) {
-        box.hidden = false;
-        const titleEl = document.getElementById('lesson-reading-title');
-        const descEl = document.getElementById('lesson-reading-desc');
-        const bodyEl = document.getElementById('lesson-reading-body');
-        if (titleEl) titleEl.textContent = 'Your text';
-        if (descEl) descEl.textContent = 'Pasted reading';
-        if (bodyEl) bodyEl.textContent = pasteTaSync.value;
-      }
+      if (box) box.hidden = true;
+      updateSaveSetButton();
     });
   }
 
@@ -3638,9 +4017,8 @@ function initPictureGame(vocabulary) {
   if (activeTaSync) {
     activeTaSync.addEventListener('input', () => {
       const pasteTa = document.getElementById('custom-reading-text');
-      const bodyEl = document.getElementById('lesson-reading-body');
       if (pasteTa) pasteTa.value = activeTaSync.value;
-      if (bodyEl) bodyEl.textContent = activeTaSync.value;
+      updateSaveSetButton();
     });
   }
 
@@ -3709,7 +4087,6 @@ function applyReadingToUi(reading) {
   const box = document.getElementById('lesson-reading');
   const titleEl = document.getElementById('lesson-reading-title');
   const descEl = document.getElementById('lesson-reading-desc');
-  const bodyEl = document.getElementById('lesson-reading-body');
   const activeTa = document.getElementById('active-reading-text');
   const pasteTa = document.getElementById('custom-reading-text');
 
@@ -3717,12 +4094,16 @@ function applyReadingToUi(reading) {
 
   if (titleEl) titleEl.textContent = reading.title || 'Reading';
   if (descEl) {
-    descEl.textContent = reading.description || (reading.level ? `${levelLabel(reading.level)}` : '');
+    const base = reading.description || (reading.level ? `${levelLabel(reading.level)}` : '');
+    const lenNote = readingLengthNote(reading);
+    descEl.textContent = lenNote ? `${base} · ${lenNote}` : base;
+    descEl.classList.toggle('reading-desc-truncated', !!reading.truncated);
   }
-  if (bodyEl) bodyEl.textContent = reading.text;
   if (activeTa) {
     activeTa.value = reading.text;
     activeTa.hidden = false;
+    const lines = Math.min(16, Math.max(6, Math.ceil((reading.text || '').length / 55)));
+    activeTa.rows = lines;
   }
   if (pasteTa) pasteTa.value = reading.text;
   if (box) box.hidden = false;
@@ -3740,9 +4121,12 @@ function setExtractLevelsUpTo(maxLevel) {
 }
 
 function getActiveReadingText() {
-  const activeTa = document.getElementById('active-reading-text');
-  if (activeTa && activeTa.value.trim()) return activeTa.value.trim();
+  const pasteTab = document.getElementById('reading-tab-paste');
+  const pasteActive = pasteTab && pasteTab.classList.contains('is-active');
   const pasteTa = document.getElementById('custom-reading-text');
+  const activeTa = document.getElementById('active-reading-text');
+  if (pasteActive && pasteTa && pasteTa.value.trim()) return pasteTa.value.trim();
+  if (activeTa && activeTa.value.trim()) return activeTa.value.trim();
   return pasteTa ? pasteTa.value.trim() : '';
 }
 
@@ -3757,4 +4141,11 @@ function setReadingSourceTab(source) {
   Object.entries(panels).forEach(([key, el]) => {
     if (el) el.hidden = key !== source;
   });
+  const box = document.getElementById('lesson-reading');
+  if (source === 'paste') {
+    if (box) box.hidden = true;
+    const pasteTa = document.getElementById('custom-reading-text');
+    if (pasteTa) pasteTa.focus();
+  }
 }
+
