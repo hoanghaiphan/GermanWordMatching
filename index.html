@@ -219,14 +219,14 @@
           </div>
 
           <!-- Extract filters: include this level and below by default -->
-          <div class="hsk-levels">
+          <div class="hsk-levels level-filters">
             <span class="hsk-label">Extract words at CEFR level(s):</span>
             <div class="checkbox-group">
               <label class="hsk-cb"><input type="checkbox" value="1" checked> A1</label>
               <label class="hsk-cb"><input type="checkbox" value="2" checked> A2</label>
               <label class="hsk-cb"><input type="checkbox" value="3" checked> B1</label>
-              <label class="hsk-cb"><input type="checkbox" value="4" checked> B2</label>
-              <label class="hsk-cb"><input type="checkbox" value="5" checked> C1</label>
+              <label class="hsk-cb"><input type="checkbox" value="4"> B2</label>
+              <label class="hsk-cb"><input type="checkbox" value="5"> C1</label>
               <label class="hsk-cb"><input type="checkbox" value="6"> C2</label>
             </div>
             <div class="level-actions">
@@ -234,6 +234,7 @@
               <button type="button" id="clear-levels" class="small-btn">None</button>
               <button type="button" id="levels-up-to-reading" class="small-btn" title="Check A1 through the selected reading level">Up to level</button>
             </div>
+            <p class="level-filter-hint">Only checked levels are extracted. Unknown words still appear so you can Add them.</p>
           </div>
 
           <div class="extract-actions">
@@ -291,7 +292,7 @@
         </div>
 
         <!-- CEFR for sets mode (controls the shared panel) -->
-        <div class="hsk-levels sets-hsk">
+        <div class="hsk-levels level-filters sets-hsk sets-level-filters sets-cefr-filters">
           <span class="hsk-label">Your CEFR level(s):</span>
           <div class="checkbox-group">
             <label class="hsk-cb"><input type="checkbox" value="1" checked class="sets-level"> A1</label>

@@ -792,7 +792,8 @@ function extractWordsFromCustomText(text, vocab, levels = [], opts = {}) {
     }
   }
 
-  const levelSet = levels.length > 0 ? new Set(levels.map(Number)) : null;
+  // Empty levels[] means "no level selected" → no known library hits (not "all levels").
+  const levelSet = new Set((levels || []).map(Number).filter((n) => n >= 1 && n <= 6));
   const tokens = text.match(/[a-zäöüßA-ZÄÖÜ]+/g) || [];
   const lowerText = text.toLowerCase();
   const tokenSet = new Set(tokens.map((t) => t.toLowerCase()));
@@ -814,7 +815,9 @@ function extractWordsFromCustomText(text, vocab, levels = [], opts = {}) {
     if (!hit) continue;
     seen.add(key);
     const lv = Number(entry.level) || 0;
-    if (!levelSet || levelSet.has(lv) || entry.userAdded) {
+    // Only include if level is checked, or user-added (always available for practice)
+    const levelOk = levelSet.size > 0 && levelSet.has(lv);
+    if (levelOk || entry.userAdded) {
       matched.push({ ...entry, unknown: false, notInLibrary: false });
     }
   }
@@ -824,7 +827,7 @@ function extractWordsFromCustomText(text, vocab, levels = [], opts = {}) {
       const key = tok.toLowerCase();
       if (seen.has(key)) continue;
       if (key.length < 2) continue; // skip tiny fragments
-      // Skip pure numbers / already-known via case
+      // In library at another CEFR level → not "unknown"; skip (user can enable that level)
       if (fullMap.has(key)) continue;
       seen.add(key);
       unknown.push({
@@ -1906,25 +1909,34 @@ async function mapWithConcurrency(items, limit, fn) {
   return results;
 }
 
+/**
+ * Read checked CEFR levels from the active UI.
+ * Returns [] when none checked (caller should not treat as "all levels").
+ */
 function getSelectedLevels() {
   // Prefer sets-mode checkboxes when that flow is visible
   const setsFlow = document.getElementById('sets-flow');
   if (setsFlow && setsFlow.style.display !== 'none') {
-    const setsCbs = document.querySelectorAll('.sets-cefr-filters input[type="checkbox"]:checked, .sets-hsk input[type="checkbox"]:checked');
-    if (setsCbs.length) return Array.from(setsCbs).map((cb) => Number(cb.value));
-    return [];
+    const setsCbs = document.querySelectorAll(
+      '#sets-flow input.sets-level:checked, .sets-cefr-filters input[type="checkbox"]:checked, .sets-hsk input[type="checkbox"]:checked'
+    );
+    return Array.from(setsCbs).map((cb) => Number(cb.value)).filter((n) => n >= 1 && n <= 6);
   }
-  // Custom / reading extract filters
-  const customCbs = document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]:checked');
+  // Reading extract filters — support both class names used in HTML
+  const customCbs = document.querySelectorAll(
+    '.custom-reading .level-filters input[type="checkbox"]:checked, .custom-reading .hsk-levels input[type="checkbox"]:checked'
+  );
   if (customCbs.length) {
-    return Array.from(customCbs).map((cb) => Number(cb.value));
+    return Array.from(customCbs).map((cb) => Number(cb.value)).filter((n) => n >= 1 && n <= 6);
   }
-  // Fallback: any visible level filters
-  const cbs = document.querySelectorAll('.level-filters input[type="checkbox"]:checked');
-  if (cbs.length) {
-    return Array.from(cbs).map((cb) => Number(cb.value));
-  }
-  return []; // all levels
+  // Fallback: any CEFR filter checkbox (never word-list item checkboxes)
+  const cbs = document.querySelectorAll(
+    '.level-filters input[type="checkbox"]:checked, .hsk-levels input[type="checkbox"]:checked'
+  );
+  return Array.from(cbs)
+    .filter((cb) => !cb.closest('#extracted-words-list') && !cb.closest('#user-words-list'))
+    .map((cb) => Number(cb.value))
+    .filter((n) => n >= 1 && n <= 6);
 }
 
 function isTextOnlyMode() {
@@ -1984,6 +1996,14 @@ function filterWordsByLevel() {
   let words = [...pictureVocabulary];
   if (selectedLevels.length > 0) {
     words = words.filter((w) => selectedLevels.includes(w.level));
+  } else if (!isCustomReadingMode()) {
+    // Sets mode with no level checked → empty set list
+    return [];
+  }
+  // Ready-made practice sets: prefer curated "core" study words
+  if (!isCustomReadingMode()) {
+    const core = words.filter((w) => w.tier === 'core' || w.study === true);
+    if (core.length >= SET_SIZE) return core;
   }
   return words;
 }
@@ -3618,8 +3638,11 @@ function initPictureGame(vocabulary) {
   }
 
   function getSelectedLevels() {
-    const cbs = document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]:checked');
-    return Array.from(cbs).map(cb => Number(cb.value));
+    // Nested override used by extract button — must match reading extract checkboxes
+    const cbs = document.querySelectorAll(
+      '.custom-reading .level-filters input[type="checkbox"]:checked, .custom-reading .hsk-levels input[type="checkbox"]:checked'
+    );
+    return Array.from(cbs).map((cb) => Number(cb.value)).filter((n) => n >= 1 && n <= 6);
   }
 
   // getActiveExtractedWords is defined at module scope (used by startGame / set options)
@@ -3691,25 +3714,32 @@ function initPictureGame(vocabulary) {
       }
 
       const selectedLevels = getSelectedLevels();
+      if (!selectedLevels.length) {
+        if (infoEl) {
+          infoEl.innerHTML = 'Select at least one CEFR level above, then extract again.';
+        }
+        customWords = [];
+        renderExtractedList([]);
+        updateCustomClearButton();
+        return;
+      }
       customWords = extractWordsFromCustomText(text, pictureVocabulary, selectedLevels, {
         includeUnknown: true,
       });
       unselectedWords = new Set();
       currentImageMap = {};
 
-      const levelDesc = selectedLevels.length === 0
-        ? 'all levels'
-        : selectedLevels.sort((a, b) => a - b).map(levelLabel).join(', ');
+      const levelDesc = selectedLevels.sort((a, b) => a - b).map(levelLabel).join(', ');
       const unknownN = customWords.filter(isIncompleteLibraryWord).length;
       const knownN = customWords.length - unknownN;
 
       if (infoEl) {
         if (customWords.length === 0) {
-          infoEl.innerHTML = `No German words found for ${levelDesc}. Try more CEFR levels or another reading.`;
+          infoEl.innerHTML = `No words at <strong>${levelDesc}</strong> in this text. Try more levels or another reading.`;
         } else if (unknownN > 0) {
-          infoEl.innerHTML = `✅ <strong>${knownN}</strong> known + <strong>${unknownN}</strong> not in library (${levelDesc}). Tap <em>Add</em> on new words, then play.`;
+          infoEl.innerHTML = `✅ <strong>${knownN}</strong> at ${levelDesc} + <strong>${unknownN}</strong> not in library. Tap <em>Add</em> on new words, then play.`;
         } else {
-          infoEl.innerHTML = `✅ Extracted <strong>${customWords.length}</strong> words for ${levelDesc}. Fix pictures if needed, then play.`;
+          infoEl.innerHTML = `✅ Extracted <strong>${customWords.length}</strong> words at ${levelDesc}. Fix pictures if needed, then play.`;
         }
       }
 
@@ -4033,12 +4063,16 @@ function initPictureGame(vocabulary) {
   const upToBtn = document.getElementById('levels-up-to-reading');
   if (allBtn) {
     allBtn.addEventListener('click', () => {
-      document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]').forEach(cb => cb.checked = true);
+      document.querySelectorAll(
+        '.custom-reading .level-filters input[type="checkbox"], .custom-reading .hsk-levels input[type="checkbox"]'
+      ).forEach((cb) => { cb.checked = true; });
     });
   }
   if (noneBtn) {
     noneBtn.addEventListener('click', () => {
-      document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]').forEach(cb => cb.checked = false);
+      document.querySelectorAll(
+        '.custom-reading .level-filters input[type="checkbox"], .custom-reading .hsk-levels input[type="checkbox"]'
+      ).forEach((cb) => { cb.checked = false; });
     });
   }
   if (upToBtn) {
@@ -4115,7 +4149,9 @@ function applyReadingToUi(reading) {
 
 function setExtractLevelsUpTo(maxLevel) {
   const max = Number(maxLevel) || 3;
-  document.querySelectorAll('.custom-reading .level-filters input[type="checkbox"]').forEach((cb) => {
+  document.querySelectorAll(
+    '.custom-reading .level-filters input[type="checkbox"], .custom-reading .hsk-levels input[type="checkbox"]'
+  ).forEach((cb) => {
     cb.checked = Number(cb.value) <= max;
   });
 }

@@ -26,6 +26,8 @@ Static **CEFR German vocab matching** site: readings → extract words → fix p
 4. Today’s reading: each click **forceNew**  
 5. **Vaporwave** theme toggle (`gwm-theme-vaporwave` in localStorage)  
 6. Toasts over alerts when `showAppToast` exists  
+7. **Extract level filters must work** — HTML uses `.level-filters` / `.hsk-levels`; empty selection ≠ all levels  
+8. Vocabulary is **study-first**: `tier: "core"` for sets, `tier: "extra"` for broad extract; rebuild with `node rebuild-vocabulary.js`
 
 ## Validate
 

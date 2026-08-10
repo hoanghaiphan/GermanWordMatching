@@ -2475,6 +2475,13 @@ html.theme-vaporwave body::after {
   }
 }
 
+.level-filter-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
 /* Daily reading length / truncation notice */
 .reading-length-note {
   display: inline-block;

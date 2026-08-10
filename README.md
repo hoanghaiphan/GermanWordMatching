@@ -107,11 +107,20 @@ Prefer HTTP over opening `index.html` directly (encoding + large JS files).
 Each entry in `vocabulary.js`:
 
 ```js
-{ word: 'Haus', article: 'das', meaning: 'house', level: 1 }
+{ word: 'Haus', article: 'das', meaning: 'house', level: 1, tier: 'core' }
 ```
 
 - `article`: `der` / `die` / `das` / `''` (empty for non-nouns)
 - `level`: 1–6 for A1–C2
+- `tier`:
+  - **`core`** — curated study list (practice sets prefer these)
+  - **`extra`** — broader dictionary for reading extract / real texts
+
+Rebuild curated + merged list:
+
+```powershell
+node rebuild-vocabulary.js
+```
 
 ## Hosting (Netlify / GitHub Pages / etc.)
 
